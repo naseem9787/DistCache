@@ -2,10 +2,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <optional>
 
 #include "resp.hpp"
 
 namespace {
+
+// Largest TTL we accept (~31 years in ms). Keeps now()+ttl far from int64 overflow.
+constexpr int64_t kMaxTtlMs = 1'000'000'000'000LL;
 
 std::string upper(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); });
@@ -14,6 +19,54 @@ std::string upper(std::string s) {
 
 std::string wrong_args(const std::string& cmd) {
     return resp_error("ERR wrong number of arguments for '" + cmd + "' command");
+}
+
+bool parse_i64(const std::string& s, int64_t& out) {
+    auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    return ec == std::errc() && p == s.data() + s.size();
+}
+
+// Converts "<n>" in seconds or milliseconds to ms, rejecting junk and huge values.
+// Returns an error reply on failure, empty string on success.
+std::string parse_ttl(const std::string& text, bool seconds, int64_t& ms) {
+    int64_t n;
+    if (!parse_i64(text, n)) return resp_error("ERR value is not an integer or out of range");
+    if (n > kMaxTtlMs / (seconds ? 1000 : 1) || n < -kMaxTtlMs) return resp_error("ERR invalid expire time");
+    ms = seconds ? n * 1000 : n;
+    return "";
+}
+
+std::string cmd_set(Store& store, const std::vector<std::string>& args) {
+    if (args.size() < 3) return wrong_args("set");
+    std::optional<int64_t> ttl_ms;
+    for (size_t i = 3; i < args.size(); ++i) {
+        const std::string opt = upper(args[i]);
+        if ((opt != "EX" && opt != "PX") || ttl_ms || i + 1 >= args.size()) return resp_error("ERR syntax error");
+        int64_t ms;
+        std::string err = parse_ttl(args[++i], opt == "EX", ms);
+        if (!err.empty()) return err;
+        if (ms <= 0) return resp_error("ERR invalid expire time in 'set' command");
+        ttl_ms = ms;
+    }
+    store.set(args[1], args[2], ttl_ms);
+    return resp_simple("OK");
+}
+
+// EXPIRE key seconds / PEXPIRE key milliseconds
+std::string cmd_expire(Store& store, const std::vector<std::string>& args, bool seconds) {
+    if (args.size() != 3) return wrong_args(seconds ? "expire" : "pexpire");
+    int64_t ms;
+    std::string err = parse_ttl(args[2], seconds, ms);
+    if (!err.empty()) return err;
+    return resp_integer(store.expire(args[1], ms) ? 1 : 0);
+}
+
+// TTL key (seconds) / PTTL key (milliseconds): -2 no key, -1 no expiry.
+std::string cmd_ttl(Store& store, const std::vector<std::string>& args, bool seconds) {
+    if (args.size() != 2) return wrong_args(seconds ? "ttl" : "pttl");
+    int64_t ms = store.ttl_ms(args[1]);
+    if (ms < 0) return resp_integer(ms);
+    return resp_integer(seconds ? (ms + 500) / 1000 : ms);  // seconds are rounded, like Redis
 }
 
 }  // namespace
@@ -30,12 +83,7 @@ std::string execute(Store& store, const std::vector<std::string>& args) {
     if (cmd == "ECHO") {
         return args.size() == 2 ? resp_bulk(args[1]) : wrong_args("echo");
     }
-    if (cmd == "SET") {
-        // EX/PX/NX options arrive in Phase 2.
-        if (args.size() != 3) return args.size() < 3 ? wrong_args("set") : resp_error("ERR syntax error");
-        store.set(args[1], args[2]);
-        return resp_simple("OK");
-    }
+    if (cmd == "SET") return cmd_set(store, args);
     if (cmd == "GET") {
         if (args.size() != 2) return wrong_args("get");
         auto v = store.get(args[1]);
@@ -46,6 +94,14 @@ std::string execute(Store& store, const std::vector<std::string>& args) {
         long long removed = 0;
         for (size_t i = 1; i < args.size(); ++i) removed += store.del(args[i]) ? 1 : 0;
         return resp_integer(removed);
+    }
+    if (cmd == "EXPIRE") return cmd_expire(store, args, true);
+    if (cmd == "PEXPIRE") return cmd_expire(store, args, false);
+    if (cmd == "TTL") return cmd_ttl(store, args, true);
+    if (cmd == "PTTL") return cmd_ttl(store, args, false);
+    if (cmd == "PERSIST") {
+        if (args.size() != 2) return wrong_args("persist");
+        return resp_integer(store.persist(args[1]) ? 1 : 0);
     }
     if (cmd == "DBSIZE") {
         return resp_integer(static_cast<long long>(store.size()));

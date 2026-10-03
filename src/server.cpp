@@ -52,12 +52,14 @@ public:
     void run() {
         epoll_event events[256];
         for (;;) {
-            int n = epoll_wait(ep_, events, 256, -1);
+            // Wake up at least every 100 ms even if no client is talking, so expired keys get swept.
+            int n = epoll_wait(ep_, events, 256, 100);
             if (n < 0) {
                 if (errno == EINTR) continue;
                 perror("epoll_wait");
                 return;
             }
+            store_.sweep();  // active expiration (bounded work per call)
             for (int i = 0; i < n; ++i) {
                 int fd = events[i].data.fd;
                 if (fd == listen_fd_) { accept_all(); continue; }
