@@ -47,7 +47,7 @@ void epoll_set(int ep, int fd, uint32_t events, int op) {
 
 class Server {
 public:
-    explicit Server(int port) { listen_on(port); }
+    Server(int port, size_t max_keys) : store_(Store::real_now_ms, max_keys) { listen_on(port); }
 
     void run() {
         epoll_event events[256];
@@ -178,7 +178,8 @@ private:
 int main(int argc, char** argv) {
     int port = argc > 1 ? std::atoi(argv[1]) : 6380;
     std::signal(SIGPIPE, SIG_IGN);  // writing to a closed socket returns EPIPE instead of killing us
-    std::printf("distcache listening on port %d\n", port);
+    size_t max_keys = argc > 2 ? static_cast<size_t>(std::atoll(argv[2])) : 0;  // 0 = unlimited
+    std::printf("distcache listening on port %d (max_keys %zu, 0 = unlimited)\n", port, max_keys);
     std::fflush(stdout);
-    Server(port).run();
+    Server(port, max_keys).run();
 }

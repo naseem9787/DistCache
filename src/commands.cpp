@@ -106,6 +106,12 @@ std::string execute(Store& store, const std::vector<std::string>& args) {
     if (cmd == "DBSIZE") {
         return resp_integer(static_cast<long long>(store.size()));
     }
+    if (cmd == "INFO") {
+        return resp_bulk("# Stats\r\nkeys:" + std::to_string(store.size()) +
+                         "\r\nmax_keys:" + std::to_string(store.max_keys()) +
+                         "\r\nevicted_keys:" + std::to_string(store.evicted_keys()) +
+                         "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n");
+    }
     if (cmd == "COMMAND") {
         return "*0\r\n";  // redis-cli asks for this on startup; an empty list is fine
     }

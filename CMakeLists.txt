@@ -17,6 +17,6 @@ target_link_libraries(distcache distcache_core)
 
 enable_testing()
 find_package(GTest REQUIRED)
-add_executable(distcache_tests tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp)
+add_executable(distcache_tests tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)
