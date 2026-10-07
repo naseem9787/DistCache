@@ -1,0 +1,2 @@
+engine=global threads=8 ops/thread=3000
+done: size=256 evicted=5654 expired=570 structures_consistent=yes

@@ -1,11 +1,13 @@
 #pragma once
 // The storage engine: an in-memory hash map with TTL expiry and LRU eviction.
+// NOT thread-safe by itself: wrap it in GlobalLockStore / ShardedStore (synced_store.hpp)
+// to share it between threads.
 //
 // Expiration (Phase 2) uses BOTH strategies:
 //   * Lazy:   every access first checks the key's deadline and deletes it if passed.
-//   * Active: sweep() is called regularly by the server loop. It pops keys whose
-//             deadline has passed from an index sorted by deadline, so it only ever
-//             touches keys that are actually expired (O(k log n) for k expired).
+//   * Active: sweep() is called regularly by the server. It pops keys whose deadline
+//             has passed from an index sorted by deadline, so it only ever touches
+//             keys that are actually expired (O(k log n) for k expired).
 //
 // Eviction (Phase 3): with a capacity limit, inserting a NEW key into a full store
 // first evicts the Least Recently Used key. Recency is a doubly linked list
@@ -19,8 +21,12 @@
 // The list stores POINTERS to the map's own key strings (unordered_map nodes never
 // move, even on rehash), so keys aren't duplicated in memory.
 //
+// THREE structures describe one key (map, LRU list, deadline index). They must change
+// together, which is why every removal goes through erase(). That also defines the
+// critical section for concurrency: one Store operation must run under ONE lock, start
+// to finish, or another thread could observe the structures half-updated.
+//
 // Time is injected (Clock) so tests can move it forward without sleeping.
-// Single-threaded for now (one epoll loop); locking arrives in Phase 4.
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -31,7 +37,9 @@
 #include <unordered_map>
 #include <utility>
 
-class Store {
+#include "engine.hpp"
+
+class Store final : public Engine {
 public:
     using Clock = std::function<int64_t()>;  // milliseconds, monotonic
 
@@ -46,7 +54,8 @@ public:
 
     // Stores key=value and marks it most recently used. No ttl_ms means "never expires"
     // and clears any old TTL (like Redis). A new key in a full store evicts the LRU key.
-    void set(const std::string& key, std::string value, std::optional<int64_t> ttl_ms = std::nullopt) {
+    void set(const std::string& key, std::string value,
+             std::optional<int64_t> ttl_ms = std::nullopt) override {
         auto it = map_.find(key);
         if (it != map_.end()) {
             drop_expiry(key, it->second);
@@ -63,7 +72,7 @@ public:
         if (ttl_ms) set_deadline(key, e, now() + *ttl_ms);
     }
 
-    std::optional<std::string> get(const std::string& key) {
+    std::optional<std::string> get(const std::string& key) override {
         auto it = live(key);
         if (it == map_.end()) return std::nullopt;
         touch(it);  // a read counts as a "use"
@@ -71,7 +80,7 @@ public:
     }
 
     // Returns true if the key existed (and wasn't already expired).
-    bool del(const std::string& key) {
+    bool del(const std::string& key) override {
         auto it = live(key);
         if (it == map_.end()) return false;
         erase(it);
@@ -79,7 +88,7 @@ public:
     }
 
     // Remaining life in ms. -2 = no such key, -1 = key has no expiry.
-    int64_t ttl_ms(const std::string& key) {
+    int64_t ttl_ms(const std::string& key) override {
         auto it = live(key);
         if (it == map_.end()) return -2;
         if (it->second.expire_at < 0) return -1;
@@ -88,7 +97,7 @@ public:
 
     // Sets/replaces a TTL on an existing key. A TTL <= 0 deletes the key at once.
     // Returns false if the key doesn't exist.
-    bool expire(const std::string& key, int64_t ttl_ms) {
+    bool expire(const std::string& key, int64_t ttl_ms) override {
         auto it = live(key);
         if (it == map_.end()) return false;
         if (ttl_ms <= 0) { erase(it); return true; }
@@ -98,7 +107,7 @@ public:
     }
 
     // Removes a TTL. Returns true if the key existed and had one.
-    bool persist(const std::string& key) {
+    bool persist(const std::string& key) override {
         auto it = live(key);
         if (it == map_.end() || it->second.expire_at < 0) return false;
         drop_expiry(key, it->second);
@@ -108,7 +117,7 @@ public:
 
     // Active expiration: delete up to `limit` expired keys. Returns how many.
     // `limit` bounds the work per call so a mass expiry can't stall the event loop.
-    size_t sweep(size_t limit = 1000) {
+    size_t sweep(size_t limit = 1000) override {
         size_t removed = 0;
         const int64_t t = now();
         while (removed < limit && !expiries_.empty() && expiries_.begin()->first <= t) {
@@ -120,10 +129,26 @@ public:
     }
 
     // Counts keys physically stored, including expired ones not yet swept (same as Redis DBSIZE).
-    size_t size() const { return map_.size(); }
-    size_t max_keys() const { return max_keys_; }
-    uint64_t evicted_keys() const { return evicted_; }
-    uint64_t expired_keys() const { return expired_; }
+    size_t size() const override { return map_.size(); }
+    size_t max_keys() const override { return max_keys_; }
+    uint64_t evicted_keys() const override { return evicted_; }
+    uint64_t expired_keys() const override { return expired_; }
+    const char* mode() const override { return "single"; }
+    size_t shards() const override { return 1; }
+
+    bool consistent() const override {
+        if (lru_.size() != map_.size()) return false;
+        size_t with_ttl = 0;
+        for (const auto& [key, e] : map_) {
+            if (*e.lru_pos != &key) return false;  // list node must point back at this entry
+            if (e.expire_at >= 0) {
+                ++with_ttl;
+                if (!expiries_.count({e.expire_at, key})) return false;
+            }
+        }
+        if (expiries_.size() != with_ttl) return false;
+        return max_keys_ == 0 || map_.size() <= max_keys_;
+    }
 
 private:
     using LruList = std::list<const std::string*>;

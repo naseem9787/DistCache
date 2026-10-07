@@ -1,0 +1,2 @@
+engine=sharded threads=8 ops/thread=3000
+done: size=251 evicted=6062 expired=222 structures_consistent=yes

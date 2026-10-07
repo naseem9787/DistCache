@@ -1,0 +1,119 @@
+# ThreadSanitizer: unsynchronized Store, 8 threads, 3000 ops each (race_demo unsafe 8 3000)
+# Full run produced 103 data-race reports, then a SEGV. Abridged below: first 2 reports + final lines.
+
+engine=unsafe threads=8 ops/thread=3000
+==================
+WARNING: ThreadSanitizer: data race (pid=634)
+  Read of size 8 at 0x7230000000a8 by thread T2:
+    #0 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #1 std::set<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::less<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >
+    #2 Store::sweep(unsigned long) /home/nasee/DistCache/src/store.hpp:123 (race_demo+0x8817)
+    #3 operator() /home/nasee/DistCache/tests/race_demo.cpp:47 (race_demo+0x4297) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #4 __invoke_impl<void, main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63 (race_demo+0x4353) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #5 __invoke<main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98 (race_demo+0x4353)
+    #6 _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303 (race_demo+0x4353)
+    #7 operator() /usr/include/c++/15/bits/std_thread.h:310 (race_demo+0x4353)
+    #8 _M_run /usr/include/c++/15/bits/std_thread.h:255 (race_demo+0x4353)
+    #9 <null> <null> (libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+
+  Previous write of size 8 at 0x7230000000a8 by thread T1:
+    #0 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #1 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #2 std::pair<std::_Rb_tree_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_
+    #3 std::pair<std::_Rb_tree_const_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::set<std::pair<long, std::__cxx11::basic_string<char, std::char
+    #4 Store::set_deadline(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, Store::Entry&, long) /home/nasee/DistCache/src/store.hpp:198 (race_demo+0xd5b9)
+    #5 Store::set(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::optional<long>) /home/nasee/
+    #6 operator() /home/nasee/DistCache/tests/race_demo.cpp:44 (race_demo+0x4181) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #7 __invoke_impl<void, main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63 (race_demo+0x4353) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #8 __invoke<main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98 (race_demo+0x4353)
+    #9 _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303 (race_demo+0x4353)
+    #10 operator() /usr/include/c++/15/bits/std_thread.h:310 (race_demo+0x4353)
+    #11 _M_run /usr/include/c++/15/bits/std_thread.h:255 (race_demo+0x4353)
+    #12 <null> <null> (libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+
+  Location is heap block of size 192 at 0x723000000000 allocated by main thread:
+    #0 operator new(unsigned long) ../../../../src/libsanitizer/tsan/tsan_new_delete.cpp:64 (libtsan.so.2+0xaba12) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::__detail::_MakeUniq<Store>::__single_object std::make_unique<Store, long (&)(), int>(long (&)(), int&&) /usr/include/c++/15/bits/unique_ptr.h:1084 (race_demo+0x447e) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51
+    #2 main /home/nasee/DistCache/tests/race_demo.cpp:28 (race_demo+0x447e)
+
+  Thread T2 (tid=637, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xf5ff0) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #2 __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59 (libc.so.6+0x2a600) (BuildId: 066527e430a32768d82741e00b81eebb1a872294)
+
+  Thread T1 (tid=636, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xf5ff0) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #2 __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59 (libc.so.6+0x2a600) (BuildId: 066527e430a32768d82741e00b81eebb1a872294)
+
+SUMMARY: ThreadSanitizer: data race /home/nasee/DistCache/src/store.hpp:123 in Store::sweep(unsigned long)
+==================
+==================
+WARNING: ThreadSanitizer: data race (pid=634)
+  Read of size 8 at 0x721400000070 by thread T2:
+    #0 Store::sweep(unsigned long) /home/nasee/DistCache/src/store.hpp:123 (race_demo+0x8841) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #1 operator() /home/nasee/DistCache/tests/race_demo.cpp:47 (race_demo+0x4297) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #2 __invoke_impl<void, main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63 (race_demo+0x4353) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #3 __invoke<main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98 (race_demo+0x4353)
+    #4 _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303 (race_demo+0x4353)
+    #5 operator() /usr/include/c++/15/bits/std_thread.h:310 (race_demo+0x4353)
+    #6 _M_run /usr/include/c++/15/bits/std_thread.h:255 (race_demo+0x4353)
+    #7 <null> <null> (libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+
+  Previous write of size 8 at 0x721400000070 by thread T1:
+    #0 operator new(unsigned long) ../../../../src/libsanitizer/tsan/tsan_new_delete.cpp:64 (libtsan.so.2+0xaba12) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::__new_allocator<std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::allocate(unsigned long, void const*) /usr/include/c++/15/bits/new_allo
+    #2 std::allocator_traits<std::allocator<std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > > >::allocate(std::allocator<std::_Rb_tree_node<std::pair
+    #3 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #4 std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >* std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::a
+    #5 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #6 std::pair<std::_Rb_tree_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_
+    #7 std::pair<std::_Rb_tree_const_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::set<std::pair<long, std::__cxx11::basic_string<char, std::char
+    #8 Store::set_deadline(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, Store::Entry&, long) /home/nasee/DistCache/src/store.hpp:198 (race_demo+0xd5b9)
+    #9 Store::set(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::optional<long>) /home/nasee/
+    #10 operator() /home/nasee/DistCache/tests/race_demo.cpp:44 (race_demo+0x4181) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #11 __invoke_impl<void, main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63 (race_demo+0x4353) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #12 __invoke<main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98 (race_demo+0x4353)
+    #13 _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303 (race_demo+0x4353)
+    #14 operator() /usr/include/c++/15/bits/std_thread.h:310 (race_demo+0x4353)
+    #15 _M_run /usr/include/c++/15/bits/std_thread.h:255 (race_demo+0x4353)
+    #16 <null> <null> (libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+
+  Location is heap block of size 72 at 0x721400000050 allocated by thread T1:
+    #0 operator new(unsigned long) ../../../../src/libsanitizer/tsan/tsan_new_delete.cpp:64 (libtsan.so.2+0xaba12) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::__new_allocator<std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::allocate(unsigned long, void const*) /usr/include/c++/15/bits/new_allo
+    #2 std::allocator_traits<std::allocator<std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > > >::allocate(std::allocator<std::_Rb_tree_node<std::pair
+    #3 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #4 std::_Rb_tree_node<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >* std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::a
+    #5 std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, s
+    #6 std::pair<std::_Rb_tree_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::_Rb_tree<std::pair<long, std::__cxx11::basic_string<char, std::char_
+    #7 std::pair<std::_Rb_tree_const_iterator<std::pair<long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, bool> std::set<std::pair<long, std::__cxx11::basic_string<char, std::char
+    #8 Store::set_deadline(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, Store::Entry&, long) /home/nasee/DistCache/src/store.hpp:198 (race_demo+0xd5b9)
+    #9 Store::set(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::optional<long>) /home/nasee/
+    #10 operator() /home/nasee/DistCache/tests/race_demo.cpp:44 (race_demo+0x4181) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #11 __invoke_impl<void, main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63 (race_demo+0x4353) (BuildId: bc67a98634fa51aec5d5e72ecb7ebe51dd74162e)
+    #12 __invoke<main(int, char**)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98 (race_demo+0x4353)
+    #13 _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303 (race_demo+0x4353)
+    #14 operator() /usr/include/c++/15/bits/std_thread.h:310 (race_demo+0x4353)
+    #15 _M_run /usr/include/c++/15/bits/std_thread.h:255 (race_demo+0x4353)
+    #16 <null> <null> (libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+
+  Thread T2 (tid=637, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xf5ff0) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #2 __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59 (libc.so.6+0x2a600) (BuildId: 066527e430a32768d82741e00b81eebb1a872294)
+
+  Thread T1 (tid=636, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1078 (libtsan.so.2+0x5cb02) (BuildId: 66d37dc704b813df6c813b77217284deb43a0042)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xf5ff0) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #2 __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59 (libc.so.6+0x2a600) (BuildId: 066527e430a32768d82741e00b81eebb1a872294)
+
+SUMMARY: ThreadSanitizer: data race /home/nasee/DistCache/src/store.hpp:123 in Store::sweep(unsigned long)
+==================
+==================
+...
+r12 = 0x0000000000000000  r13 = 0x0000723000000030  r14 = 0x0000000000000030  r15 = 0x000000000003ee78  
+ThreadSanitizer can not provide additional info.
+SUMMARY: ThreadSanitizer: SEGV /home/nasee/DistCache/src/store.hpp:202 in Store::drop_expiry(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, Store::Entry const&)
+==634==ABORTING
+exit code: 66

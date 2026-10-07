@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "commands.hpp"
+#include "store.hpp"
 
 namespace {
 std::string run(Store& s, std::vector<std::string> args) { return execute(s, args); }

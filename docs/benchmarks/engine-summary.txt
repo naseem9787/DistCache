@@ -1,0 +1,28 @@
+
+### 90% GET / 10% SET, 100k keys, 16 shards (median of runs, [min-max]) -- ops/sec
+unsynchronized, 1 thread (baseline):   2.16M
+threads |        global mutex          |        sharded (16)         | sharded / global
+      1 |   1.97M [  1.94M-  1.98M] |   2.02M [  2.01M-  2.05M] |  1.03x
+      2 |   0.65M [  0.65M-  0.65M] |   1.92M [  1.77M-  1.93M] |  2.94x
+      4 |   0.56M [  0.50M-  0.58M] |   2.34M [  2.34M-  2.67M] |  4.16x
+      8 |   0.56M [  0.53M-  0.56M] |   3.42M [  2.56M-  4.11M] |  6.08x
+     12 |   0.57M [  0.49M-  0.59M] |   2.51M [  2.22M-  2.85M] |  4.39x
+
+### 50% GET / 50% SET, 100k keys, 16 shards (median of runs, [min-max]) -- ops/sec
+unsynchronized, 1 thread (baseline):   1.54M
+threads |        global mutex          |        sharded (16)         | sharded / global
+      1 |   1.61M [  1.54M-  1.61M] |   1.90M [  1.69M-  1.91M] |  1.19x
+      2 |   0.64M [  0.63M-  0.65M] |   2.00M [  1.96M-  2.04M] |  3.12x
+      4 |   0.70M [  0.69M-  0.73M] |   3.00M [  2.95M-  3.07M] |  4.28x
+      8 |   0.72M [  0.71M-  0.72M] |   4.26M [  3.94M-  4.37M] |  5.92x
+     12 |   0.66M [  0.66M-  0.67M] |   4.99M [  4.99M-  5.07M] |  7.58x
+
+### shard count sweep: 8 threads, 90% GET -- ops/sec
+shards |   median   [min - max]
+     1 |   0.81M [  0.78M -   0.82M]
+     2 |   1.35M [  1.32M -   1.36M]
+     4 |   2.14M [  2.06M -   2.15M]
+     8 |   3.06M [  2.96M -   3.08M]
+    16 |   3.42M [  2.56M -   4.11M]
+    64 |   4.43M [  3.84M -   4.66M]
+   256 |   9.22M [  8.61M -   9.29M]

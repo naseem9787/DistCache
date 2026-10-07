@@ -1,0 +1,14 @@
+capacity=1000, cyclic access, hit rate % after warm-up (100 = exact LRU)
+working set / shards         1       4      16      64     256
+W= 500 ( 50% of cap)     100.0   100.0   100.0   100.0    83.2
+W= 800 ( 80% of cap)     100.0   100.0   100.0    86.4    62.6
+W= 950 ( 95% of cap)     100.0    73.3    78.7    54.8    50.1
+(effective capacity per column: 1000 1000 1008 1024 1024 )
+
+capacity=100000, cyclic access, hit rate % after warm-up (100 = exact LRU)
+working set / shards         1       4      16      64     256
+W=50000 ( 50% of cap)     100.0   100.0   100.0   100.0   100.0
+W=80000 ( 80% of cap)     100.0   100.0   100.0   100.0   100.0
+W=95000 ( 95% of cap)     100.0   100.0   100.0   100.0    83.9
+(effective capacity per column: 100000 100000 100000 100032 100096 )
+

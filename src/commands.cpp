@@ -36,7 +36,7 @@ std::string parse_ttl(const std::string& text, bool seconds, int64_t& ms) {
     return "";
 }
 
-std::string cmd_set(Store& store, const std::vector<std::string>& args) {
+std::string cmd_set(Engine& store, const std::vector<std::string>& args) {
     if (args.size() < 3) return wrong_args("set");
     std::optional<int64_t> ttl_ms;
     for (size_t i = 3; i < args.size(); ++i) {
@@ -53,7 +53,7 @@ std::string cmd_set(Store& store, const std::vector<std::string>& args) {
 }
 
 // EXPIRE key seconds / PEXPIRE key milliseconds
-std::string cmd_expire(Store& store, const std::vector<std::string>& args, bool seconds) {
+std::string cmd_expire(Engine& store, const std::vector<std::string>& args, bool seconds) {
     if (args.size() != 3) return wrong_args(seconds ? "expire" : "pexpire");
     int64_t ms;
     std::string err = parse_ttl(args[2], seconds, ms);
@@ -62,7 +62,7 @@ std::string cmd_expire(Store& store, const std::vector<std::string>& args, bool 
 }
 
 // TTL key (seconds) / PTTL key (milliseconds): -2 no key, -1 no expiry.
-std::string cmd_ttl(Store& store, const std::vector<std::string>& args, bool seconds) {
+std::string cmd_ttl(Engine& store, const std::vector<std::string>& args, bool seconds) {
     if (args.size() != 2) return wrong_args(seconds ? "ttl" : "pttl");
     int64_t ms = store.ttl_ms(args[1]);
     if (ms < 0) return resp_integer(ms);
@@ -71,7 +71,7 @@ std::string cmd_ttl(Store& store, const std::vector<std::string>& args, bool sec
 
 }  // namespace
 
-std::string execute(Store& store, const std::vector<std::string>& args) {
+std::string execute(Engine& store, const std::vector<std::string>& args) {
     if (args.empty()) return "";  // blank line: nothing to say
     const std::string cmd = upper(args[0]);
 
@@ -107,7 +107,9 @@ std::string execute(Store& store, const std::vector<std::string>& args) {
         return resp_integer(static_cast<long long>(store.size()));
     }
     if (cmd == "INFO") {
-        return resp_bulk("# Stats\r\nkeys:" + std::to_string(store.size()) +
+        return resp_bulk(std::string("# Concurrency\r\nmode:") + store.mode() +
+                         "\r\nshards:" + std::to_string(store.shards()) +
+                         "\r\n# Stats\r\nkeys:" + std::to_string(store.size()) +
                          "\r\nmax_keys:" + std::to_string(store.max_keys()) +
                          "\r\nevicted_keys:" + std::to_string(store.evicted_keys()) +
                          "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n");
