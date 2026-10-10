@@ -27,4 +27,6 @@ std::string resp_simple(std::string_view s);   // +OK\r\n
 std::string resp_error(std::string_view s);    // -ERR message\r\n
 std::string resp_integer(long long n);         // :1\r\n
 std::string resp_bulk(std::string_view s);     // $6\r\nNaseem\r\n
+// What a client sends: *N, then each argument as a bulk string. Used to write log records.
+std::string resp_command(const std::vector<std::string>& args);
 std::string resp_null();                       // $-1\r\n  (key not found)

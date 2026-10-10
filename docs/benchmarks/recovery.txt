@@ -1,0 +1,21 @@
+--- run 1
+dataset: 1000000 SET commands -> 632300 distinct keys, log = 109 MiB
+recovery from log only      : 1.108315006s   (recovered: snapshot=no (0 keys), 1 log segments, 1000000 records replayed, 0 already-expired skipped, 632300 keys live)
+  key count after recovery matches: 632300
+snapshot file               : 69 MiB
+recovery from snapshot      : .620721583s   (recovered: snapshot=yes (632300 keys), 1 log segments, 0 records replayed, 0 already-expired skipped, 632300 keys live)
+  key count after recovery matches: 632300
+--- run 2
+dataset: 1000000 SET commands -> 632188 distinct keys, log = 109 MiB
+recovery from log only      : 1.166962965s   (recovered: snapshot=no (0 keys), 1 log segments, 1000000 records replayed, 0 already-expired skipped, 632188 keys live)
+  key count after recovery matches: 632188
+snapshot file               : 69 MiB
+recovery from snapshot      : .573277962s   (recovered: snapshot=yes (632188 keys), 1 log segments, 0 records replayed, 0 already-expired skipped, 632188 keys live)
+  key count after recovery matches: 632188
+--- run 3
+dataset: 1000000 SET commands -> 632171 distinct keys, log = 109 MiB
+recovery from log only      : 1.066273712s   (recovered: snapshot=no (0 keys), 1 log segments, 1000000 records replayed, 0 already-expired skipped, 632171 keys live)
+  key count after recovery matches: 632171
+snapshot file               : 69 MiB
+recovery from snapshot      : .575023241s   (recovered: snapshot=yes (632171 keys), 1 log segments, 0 records replayed, 0 already-expired skipped, 632171 keys live)
+  key count after recovery matches: 632171

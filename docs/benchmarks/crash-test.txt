@@ -1,0 +1,13 @@
+# kill -9 crash test: 25 random kills per row, 4 writer connections, sharded engine, 4 workers
+# data directory on a real disk (filesystem type: ext2/ext3), not tmpfs
+# (SIGKILL: the OS survives, so this measures the process-crash window, NOT power loss)
+policy     snap_mb rounds  acked writes  lost acked  worst round rounds w/ loss  holes  corrupt
+always          64     25          7011           0            0              0      0        0
+everysec        64     25        219689        1702          219             25      0        0
+no              64     25        213497        1360          124             25      0        0
+
+# same, with a 1 MiB snapshot threshold so many kills land during or right after a snapshot
+policy     snap_mb rounds  acked writes  lost acked  worst round rounds w/ loss  holes  corrupt
+always           1     25          6186           0            0              0      0        0
+policy     snap_mb rounds  acked writes  lost acked  worst round rounds w/ loss  holes  corrupt
+everysec         1     25        237726        1467          174             24      0        0

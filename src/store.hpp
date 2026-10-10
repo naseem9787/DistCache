@@ -70,6 +70,7 @@ public:
         e.value = std::move(value);
         e.expire_at = -1;
         if (ttl_ms) set_deadline(key, e, now() + *ttl_ms);
+        if (observer_) observer_->on_set(key, e.value, ttl_ms);
     }
 
     std::optional<std::string> get(const std::string& key) override {
@@ -84,6 +85,7 @@ public:
         auto it = live(key);
         if (it == map_.end()) return false;
         erase(it);
+        if (observer_) observer_->on_del(key);
         return true;
     }
 
@@ -100,9 +102,14 @@ public:
     bool expire(const std::string& key, int64_t ttl_ms) override {
         auto it = live(key);
         if (it == map_.end()) return false;
-        if (ttl_ms <= 0) { erase(it); return true; }
+        if (ttl_ms <= 0) {
+            erase(it);
+            if (observer_) observer_->on_del(key);
+            return true;
+        }
         drop_expiry(key, it->second);
         set_deadline(key, it->second, now() + ttl_ms);
+        if (observer_) observer_->on_expire(key, ttl_ms);
         return true;
     }
 
@@ -112,6 +119,7 @@ public:
         if (it == map_.end() || it->second.expire_at < 0) return false;
         drop_expiry(key, it->second);
         it->second.expire_at = -1;
+        if (observer_) observer_->on_persist(key);
         return true;
     }
 
@@ -126,6 +134,16 @@ public:
             ++removed;
         }
         return removed;
+    }
+
+    void set_observer(MutationObserver* observer) override { observer_ = observer; }
+
+    void for_each(const EntryVisitor& visit) const override {
+        const int64_t t = now();
+        for (const auto& [key, e] : map_) {
+            if (e.expire_at >= 0 && e.expire_at <= t) continue;  // expired, just not swept yet
+            visit(key, e.value, e.expire_at < 0 ? -1 : e.expire_at - t);
+        }
     }
 
     // Counts keys physically stored, including expired ones not yet swept (same as Redis DBSIZE).
@@ -170,8 +188,10 @@ private:
         if (max_keys_ == 0 || map_.size() < max_keys_) return;
         sweep(16);
         while (map_.size() >= max_keys_ && !lru_.empty()) {
-            erase(map_.find(*lru_.back()));  // least recently used
+            const std::string victim = *lru_.back();  // least recently used (copy: erase frees it)
+            erase(map_.find(victim));
             ++evicted_;
+            if (observer_) observer_->on_del(victim);  // logged, so replay reproduces the eviction
         }
     }
 
@@ -209,4 +229,5 @@ private:
     std::set<std::pair<int64_t, std::string>> expiries_;  // (deadline, key), soonest first
     uint64_t evicted_ = 0;
     uint64_t expired_ = 0;
+    MutationObserver* observer_ = nullptr;
 };

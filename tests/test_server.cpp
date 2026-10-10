@@ -8,13 +8,17 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <stdlib.h>
+
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "persistence.hpp"
 #include "server.hpp"
 #include "store.hpp"
 #include "synced_store.hpp"
@@ -258,4 +262,58 @@ TEST(ServerLifecycle, StopWithOpenConnectionsDoesNotHang) {
     server.stop();
     server.stop();  // idempotent
     EXPECT_EQ(b.cmd({"PING"}), "<closed>");
+}
+
+// The durability promise, end to end: under fsync=always, every write a client saw acknowledged
+// is already on disk. We copy the data directory WHILE the server is still running, with no
+// clean shutdown (this is what the disk looks like after a crash) and recover from the copy.
+TEST(ServerPersistence, AcknowledgedWritesAreOnDiskUnderFsyncAlways) {
+    char tmpl[] = "/tmp/distcache-srv-XXXXXX";
+    const std::string dir = mkdtemp(tmpl);
+    const std::string crash_image = dir + "-crash";
+    ShardedStore engine(4);
+    PersistenceOptions po;
+    po.dir = dir;
+    po.fsync = FsyncPolicy::Always;
+    po.snapshot_wal_bytes = 0;
+    Persistence persistence(engine, po);
+    std::string err;
+    ASSERT_TRUE(persistence.open(nullptr, &err)) << err;
+    Server server(engine, ServerOptions{0, 4, &persistence});
+    ASSERT_TRUE(server.start(&err)) << err;
+
+    constexpr int kClients = 8, kPer = 40;
+    std::atomic<int> failures{0};
+    std::vector<std::thread> ts;
+    for (int t = 0; t < kClients; ++t)
+        ts.emplace_back([&, t] {
+            Client c(server.port());
+            for (int i = 0; i < kPer; ++i)
+                if (c.cmd({"SET", "d" + std::to_string(t) + ":" + std::to_string(i), "v" + std::to_string(i)}) != "+OK") ++failures;
+        });
+    for (auto& th : ts) th.join();
+    ASSERT_EQ(failures.load(), 0);
+
+    std::filesystem::create_directories(crash_image);
+    for (auto& e : std::filesystem::directory_iterator(dir))
+        if (e.path().filename() != "LOCK") std::filesystem::copy_file(e.path(), crash_image + "/" + e.path().filename().string());
+
+    ShardedStore recovered(4);
+    PersistenceOptions po2 = po;
+    po2.dir = crash_image;
+    Persistence p2(recovered, po2);
+    RecoveryStats rs;
+    ASSERT_TRUE(p2.open(&rs, &err)) << err;
+    EXPECT_EQ(recovered.size(), static_cast<size_t>(kClients * kPer));  // nothing acknowledged was lost
+    for (int t = 0; t < kClients; ++t)
+        for (int i = 0; i < kPer; ++i)
+            ASSERT_EQ(recovered.get("d" + std::to_string(t) + ":" + std::to_string(i)), "v" + std::to_string(i));
+    EXPECT_EQ(rs.damaged_files, 0u);
+    p2.close();
+
+    server.stop();
+    persistence.close();
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::remove_all(crash_image, ec);
 }

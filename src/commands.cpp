@@ -71,7 +71,7 @@ std::string cmd_ttl(Engine& store, const std::vector<std::string>& args, bool se
 
 }  // namespace
 
-std::string execute(Engine& store, const std::vector<std::string>& args) {
+std::string execute(Engine& store, const std::vector<std::string>& args, CommandHooks* hooks) {
     if (args.empty()) return "";  // blank line: nothing to say
     const std::string cmd = upper(args[0]);
 
@@ -112,7 +112,14 @@ std::string execute(Engine& store, const std::vector<std::string>& args) {
                          "\r\n# Stats\r\nkeys:" + std::to_string(store.size()) +
                          "\r\nmax_keys:" + std::to_string(store.max_keys()) +
                          "\r\nevicted_keys:" + std::to_string(store.evicted_keys()) +
-                         "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n");
+                         "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n" +
+                         (hooks ? hooks->info() : std::string("# Persistence\r\nenabled:no\r\n")));
+    }
+    if (cmd == "SAVE") {
+        if (args.size() != 1) return wrong_args("save");
+        if (!hooks) return resp_error("ERR persistence is not enabled (start with --dir)");
+        std::string err;
+        return hooks->save(&err) ? resp_simple("OK") : resp_error("ERR " + err);
     }
     if (cmd == "COMMAND") {
         return "*0\r\n";  // redis-cli asks for this on startup; an empty list is fine

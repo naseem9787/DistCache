@@ -46,7 +46,8 @@ void epoll_set(int ep, int fd, uint32_t events, int op) {
 // ---------------------------------------------------------------------------
 class Server::Worker {
 public:
-    Worker(Engine& engine, const std::atomic<bool>& running) : engine_(engine), running_(running) {}
+    Worker(Engine& engine, CommandHooks* hooks, const std::atomic<bool>& running)
+        : engine_(engine), hooks_(hooks), running_(running) {}
     ~Worker() {
         for (auto& [fd, c] : conns_) close(fd);
         for (int fd : pending_) close(fd);
@@ -140,6 +141,9 @@ private:
             }
         }
         process_input(c);
+        // Group commit: one wait covers every command in this batch, and (under fsync=always)
+        // also shares its fsync with other workers' writers. Replies leave only after this.
+        if (hooks_) hooks_->commit();
         flush(fd);
     }
 
@@ -155,7 +159,7 @@ private:
                 c.close_after_flush = true;
                 break;
             }
-            c.out += execute(engine_, r.args);  // <-- the only place workers touch shared state
+            c.out += execute(engine_, r.args, hooks_);  // <-- the only place workers touch shared state
             offset += r.consumed;
         }
         c.in.erase(0, offset);
@@ -188,6 +192,7 @@ private:
     }
 
     Engine& engine_;
+    CommandHooks* hooks_;
     const std::atomic<bool>& running_;
     int ep_ = -1;
     int wake_ = -1;
@@ -226,7 +231,7 @@ bool Server::start(std::string* error) {
 
     running_.store(true, std::memory_order_release);
     for (int i = 0; i < std::max(1, opts_.workers); ++i) {
-        workers_.push_back(std::make_unique<Worker>(engine_, running_));
+        workers_.push_back(std::make_unique<Worker>(engine_, opts_.hooks, running_));
         if (!workers_.back()->init()) { running_ = false; return fail("worker init"); }
     }
     for (auto& w : workers_) w->start();

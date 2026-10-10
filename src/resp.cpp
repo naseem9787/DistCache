@@ -95,4 +95,9 @@ std::string resp_integer(long long n) { return ":" + std::to_string(n) + "\r\n";
 std::string resp_bulk(std::string_view s) {
     return "$" + std::to_string(s.size()) + "\r\n" + std::string(s) + "\r\n";
 }
+std::string resp_command(const std::vector<std::string>& args) {
+    std::string out = "*" + std::to_string(args.size()) + "\r\n";
+    for (const auto& a : args) out += resp_bulk(a);
+    return out;
+}
 std::string resp_null() { return "$-1\r\n"; }

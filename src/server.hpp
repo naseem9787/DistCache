@@ -15,11 +15,13 @@
 #include <thread>
 #include <vector>
 
+#include "commands.hpp"
 #include "engine.hpp"
 
 struct ServerOptions {
     int port = 6380;      // 0 = let the OS pick (see Server::port())
     int workers = 4;      // number of worker (epoll) threads
+    CommandHooks* hooks = nullptr;  // persistence (SAVE / INFO / durable-before-reply); may be null
 };
 
 class Server {

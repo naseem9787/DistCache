@@ -15,6 +15,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <tuple>
 #include <vector>
 
 #include "store.hpp"
@@ -56,6 +57,17 @@ public:
     size_t sweep(size_t limit = 1000) override {
         std::lock_guard<std::mutex> g(mu_);
         return store_.sweep(limit);
+    }
+
+    void set_observer(MutationObserver* o) override { store_.set_observer(o); }
+    void for_each(const EntryVisitor& visit) const override {
+        std::vector<std::tuple<std::string, std::string, int64_t>> copy;  // copy under the lock...
+        {
+            std::lock_guard<std::mutex> g(mu_);
+            copy.reserve(store_.size());
+            store_.for_each([&](const std::string& k, const std::string& v, int64_t t) { copy.emplace_back(k, v, t); });
+        }
+        for (const auto& [k, v, t] : copy) visit(k, v, t);  // ...visit after releasing it
     }
 
     size_t size() const override { std::lock_guard<std::mutex> g(mu_); return store_.size(); }
@@ -146,6 +158,21 @@ public:
             removed += s.store.sweep(limit - removed);
         }
         return removed;
+    }
+
+    void set_observer(MutationObserver* o) override {
+        for (auto& sh : shards_) sh->store.set_observer(o);  // every shard reports to the same observer
+    }
+    void for_each(const EntryVisitor& visit) const override {
+        for (const auto& sh : shards_) {  // one shard at a time: bounded copy, bounded lock hold
+            std::vector<std::tuple<std::string, std::string, int64_t>> copy;
+            {
+                std::lock_guard<std::mutex> g(sh->mu);
+                copy.reserve(sh->store.size());
+                sh->store.for_each([&](const std::string& k, const std::string& v, int64_t t) { copy.emplace_back(k, v, t); });
+            }
+            for (const auto& [k, v, t] : copy) visit(k, v, t);
+        }
     }
 
     size_t size() const override { return sum([](const Store& s) { return s.size(); }); }
