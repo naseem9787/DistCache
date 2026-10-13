@@ -1,0 +1,29 @@
+# Full unit + end-to-end test suite (distcache_tests) on the Phase 6 tree, 2026-10-13T16:50:40Z
+# base commit cdd855d + working tree; sources identical to the benchmarked binary
+# (build/distcache sha256 prefix 77be965f36f96619, same as build/distcache_final)
+
+## plain: Release -O3 -DNDEBUG (no sanitizer)
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded (0 ms)
+[==========] 155 tests from 21 test suites ran. (8253 ms total)
+[  PASSED  ] 154 tests.
+[  SKIPPED ] 1 test, listed below:
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded
+sanitizer reports in the output: 0
+
+## asan: RelWithDebInfo -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined
+instrumented symbols in the test binary: 35
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded (0 ms)
+[==========] 155 tests from 21 test suites ran. (12652 ms total)
+[  PASSED  ] 154 tests.
+[  SKIPPED ] 1 test, listed below:
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded
+sanitizer reports in the output: 0
+
+## tsan: RelWithDebInfo -fsanitize=thread -fno-omit-frame-pointer
+instrumented symbols in the test binary: 25
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded (0 ms)
+[==========] 155 tests from 21 test suites ran. (13397 ms total)
+[  PASSED  ] 154 tests.
+[  SKIPPED ] 1 test, listed below:
+[  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded
+sanitizer reports in the output: 0

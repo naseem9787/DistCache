@@ -39,6 +39,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "commands.hpp"
@@ -83,8 +84,15 @@ public:
     bool save(std::string* error) override { return snapshot(error); }
     std::string info() override;
     void commit() override { if (wal_) wal_->commit(); }
+    uint64_t take_pending() override { return wal_ ? wal_->take_pending_seq() : 0; }
+    uint64_t durable() override { return wal_ ? wal_->durable_seq() : 0; }
+    int add_durable_listener(std::function<void()> fn) override;
+    void remove_durable_listener(int id) override;
 
     bool snapshot(std::string* error);
+
+    // TEST ONLY (see Wal::set_sync_delay_for_testing): delay every fdatasync.
+    void set_sync_delay_for_testing(std::chrono::milliseconds d) { if (wal_) wal_->set_sync_delay_for_testing(d); }
 
     struct Stats {
         WalStats wal;
@@ -107,10 +115,16 @@ private:
     std::unique_ptr<Wal> wal_;
     int lock_fd_ = -1;
     bool open_ = false;
+    uint64_t recovery_ms_ = 0;  // wall time of recover(), reported by INFO
 
     std::mutex snap_mu_;  // one snapshot at a time
     mutable std::mutex stats_mu_;
     uint64_t snapshots_taken_ = 0, last_snapshot_id_ = 0, last_snapshot_keys_ = 0, last_snapshot_ms_ = 0;
+
+    std::mutex listeners_mu_;
+    std::vector<std::pair<int, std::function<void()>>> listeners_;
+    int next_listener_id_ = 1;
+    void notify_listeners();
 
     std::thread snap_thread_;
     std::mutex stop_mu_;

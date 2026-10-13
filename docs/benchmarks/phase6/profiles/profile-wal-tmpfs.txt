@@ -1,0 +1,72 @@
+6230 samples; breakdown by thread:
+  worker        5908   94.8% of all CPU samples
+  flusher        315    5.1% of all CPU samples
+  other            4    0.1% of all CPU samples
+  accept           3    0.0% of all CPU samples
+
+=== thread: worker  (5908 samples)
+  self time (function the CPU was executing):
+     48.2%  [unresolved library/kernel]
+      9.9%  std::__detail::_Hashtable_base<std::string, std::pair<std::string const, Store::Entry>,...
+      5.9%  std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const
+      4.8%  _ZNSt8__detail15_List_node_base11_M_transferEPS0_S1_ [libstdc++.so.6]
+      3.3%  clock_gettime [lib]
+      2.2%  std::__atomic_base<unsigned long>::fetch_add(unsigned long, std::memory_order)
+      1.9%  crc32(void const*, unsigned long)
+      1.8%  _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_appendEPKcm [libstdc++.so.6]
+      1.3%  epoll_ctl [libc.so.6]
+      1.3%  __libc_free [libc.so.6]
+      1.2%  std::__atomic_base<bool>::load(std::memory_order) const
+      1.1%  pthread_mutex_lock [libc.so.6]
+      1.0%  SpinMutex::lock()
+      1.0%  std::__atomic_base<unsigned long>::load(std::memory_order) const
+      0.9%  __sched_yield [libc.so.6]
+      0.8%  parse_command(std::basic_string_view<char, std::char_traits<char> >)
+      0.8%  std::vector<std::string, std::allocator<std::string > >::operator[](unsigned long) const
+      0.6%  malloc [libc.so.6]
+      0.6%  std::char_traits<char>::compare(char const*, char const*, unsigned long)
+      0.6%  std::char_traits<char>::copy(char*, char const*, unsigned long)
+  inclusive time (function anywhere on the stack):
+    100.0%  Server::Worker::run()
+    100.0%  [unresolved library/kernel]
+     99.0%  Server::Worker::on_readable(int)
+     59.4%  process_input
+     54.3%  std::string::size() const
+     54.1%  std::string::operator+=(std::string const&)
+     54.1%  std::string::append(std::string const&)
+     54.1%  execute(Engine&, std::vector<std::string, std::allocator<std::string > > const&, Comman...
+     53.1%  cmd_set
+     51.1%  std::string::_M_data() const
+     51.0%  std::string::_M_is_local() const
+     51.0%  std::string::~basic_string()
+     51.0%  std::string::_M_dispose()
+     46.0%  ShardedStore::set(std::string const&, std::string, std::optional<long>)
+     35.8%  Server::Worker::flush(int)
+     34.4%  __write [libc.so.6]
+     23.1%  Store::set(std::string const&, std::string, std::optional<long>)
+     17.1%  std::_Hashtable<std::string, std::pair<std::string const, Store::Entry>, std::allocator...
+     16.9%  std::unordered_map<std::string, Store::Entry, std::hash<std::string >, std::equal_to<st...
+     10.7%  std::__detail::_Hashtable_base<std::string, std::pair<std::string const, Store::Entry>,...
+
+=== thread: flusher  (315 samples)
+  self time (function the CPU was executing):
+     99.4%  [unresolved library/kernel]
+      0.6%  __sched_yield [libc.so.6]
+  inclusive time (function anywhere on the stack):
+    100.0%  [unresolved library/kernel]
+    100.0%  Wal::flusher_loop()
+     99.4%  Wal::flush_locked_io(bool)
+     99.4%  std::mutex::unlock()
+     99.4%  __gthread_mutex_unlock(pthread_mutex_t*)
+     99.4%  std::lock_guard<std::mutex>::~lock_guard()
+     98.7%  __write [libc.so.6]
+     98.7%  Wal::write_all(char const*, unsigned long)
+      0.6%  pthread_cond_clockwait [libc.so.6]
+      0.6%  wait_until<std::chrono::_V2::steady_clock, std::chrono::duration<long int, std::ratio<1...
+      0.6%  wait_for<long int, std::ratio<1, 1000>, Wal::flusher_loop()::<lambda()> >
+      0.6%  std::cv_status std::condition_variable::wait_until<std::chrono::duration<long, std::rat...
+      0.6%  std::cv_status std::condition_variable::__wait_until_impl<std::chrono::duration<long, s...
+      0.6%  SpinMutex::lock()
+      0.6%  std::lock_guard<SpinMutex>::lock_guard(SpinMutex&)
+      0.6%  __sched_yield [libc.so.6]
+      0.6%  std::this_thread::yield()

@@ -14,6 +14,7 @@
 #include <string>
 #include <thread>
 
+#include "diag.hpp"
 #include "persistence.hpp"
 #include "server.hpp"
 #include "store.hpp"
@@ -105,6 +106,14 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+#ifdef DISTCACHE_DIAGNOSTICS
+    // DISTCACHE_PROFILE=<file> [DISTCACHE_PROFILE_HZ=250]: in-process sampling profiler. The output
+    // is symbolized offline by bench/harness/symbolize.py. Not available in the normal build.
+    if (const char* p = std::getenv("DISTCACHE_PROFILE")) {
+        const char* hz = std::getenv("DISTCACHE_PROFILE_HZ");
+        diag::profiler_start(p, hz ? std::atoi(hz) : 250);
+    }
+#endif
     std::signal(SIGPIPE, SIG_IGN);  // writing to a closed socket returns EPIPE instead of killing us
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
@@ -139,5 +148,8 @@ int main(int argc, char** argv) {
     while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     server.stop();                         // stop accepting and serving first...
     if (persistence) persistence->close(); // ...then flush and fsync the log
+#ifdef DISTCACHE_DIAGNOSTICS
+    diag::profiler_stop();
+#endif
     return 0;
 }

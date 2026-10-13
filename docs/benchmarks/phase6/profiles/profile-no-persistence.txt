@@ -1,0 +1,48 @@
+5749 samples; breakdown by thread:
+  worker        5744   99.9% of all CPU samples
+  other            3    0.1% of all CPU samples
+  accept           2    0.0% of all CPU samples
+
+=== thread: worker  (5744 samples)
+  self time (function the CPU was executing):
+     51.0%  [unresolved library/kernel]
+     12.8%  std::__detail::_Hashtable_base<std::string, std::pair<std::string const, Store::Entry>,...
+      7.2%  std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const
+      6.7%  _ZNSt8__detail15_List_node_base11_M_transferEPS0_S1_ [libstdc++.so.6]
+      2.6%  __libc_free [libc.so.6]
+      1.9%  pthread_mutex_lock [libc.so.6]
+      1.6%  clock_gettime [lib]
+      1.5%  std::__atomic_base<unsigned long>::fetch_add(unsigned long, std::memory_order)
+      1.4%  parse_command(std::basic_string_view<char, std::char_traits<char> >)
+      1.0%  epoll_ctl [libc.so.6]
+      0.8%  malloc [libc.so.6]
+      0.7%  std::char_traits<char>::compare(char const*, char const*, unsigned long)
+      0.7%  std::char_traits<char>::copy(char*, char const*, unsigned long)
+      0.6%  toupper [libc.so.6]
+      0.5%  std::__atomic_base<unsigned long>::load(std::memory_order) const
+      0.5%  std::_Hashtable<std::string, std::pair<std::string const, Store::Entry>, std::allocator...
+      0.5%  std::vector<std::string, std::allocator<std::string > >::operator[](unsigned long) const
+      0.4%  std::basic_string_view<char, std::char_traits<char> >::find(char const*, unsigned long,...
+      0.4%  Store::set(std::string const&, std::string, std::optional<long>)
+      0.4%  std::string::size() const
+  inclusive time (function anywhere on the stack):
+    100.0%  Server::Worker::run()
+    100.0%  [unresolved library/kernel]
+     99.1%  Server::Worker::on_readable(int)
+     55.3%  process_input
+     48.4%  std::string::size() const
+     48.0%  std::string::append(std::string const&)
+     48.0%  std::string::operator+=(std::string const&)
+     47.8%  execute(Engine&, std::vector<std::string, std::allocator<std::string > > const&, Comman...
+     46.5%  cmd_set
+     44.8%  std::string::_M_data() const
+     44.3%  std::string::_M_is_local() const
+     44.3%  std::string::~basic_string()
+     44.3%  std::string::_M_dispose()
+     39.7%  ShardedStore::set(std::string const&, std::string, std::optional<long>)
+     39.0%  Server::Worker::flush(int)
+     37.8%  __write [libc.so.6]
+     29.5%  Store::set(std::string const&, std::string, std::optional<long>)
+     21.6%  std::_Hashtable<std::string, std::pair<std::string const, Store::Entry>, std::allocator...
+     21.4%  std::unordered_map<std::string, Store::Entry, std::hash<std::string >, std::equal_to<st...
+     13.7%  std::__detail::_Hashtable_base<std::string, std::pair<std::string const, Store::Entry>,...

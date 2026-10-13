@@ -1,7 +1,7 @@
 // In-process engine benchmark: N threads call the Engine directly, no sockets.
 // This isolates the cost of the locking strategy from network/syscall overhead.
 //
-//   bench_engine <none|global|sharded> <threads> [seconds=3] [keyspace=100000] [read_pct=90] [shards=16]
+//   bench_engine <none|global|sharded> <threads> [seconds=3] [keyspace=100000] [read_pct=90] [shards=16] [ttl_ms=0]
 //
 // "none" is the unsynchronized Store and only makes sense with 1 thread (baseline).
 // Prints one CSV line: engine,threads,shards,seconds,total_ops,ops_per_sec
@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -34,6 +35,9 @@ int main(int argc, char** argv) {
     size_t keyspace = argc > 4 ? static_cast<size_t>(std::atoll(argv[4])) : 100000;
     int read_pct = argc > 5 ? std::atoi(argv[5]) : 90;
     size_t shards = argc > 6 ? static_cast<size_t>(std::atoll(argv[6])) : 16;
+    // ttl_ms > 0: every SET carries that TTL (so each write also maintains the deadline index)
+    const std::optional<int64_t> ttl = (argc > 7 && std::atoll(argv[7]) > 0) ? std::optional<int64_t>(std::atoll(argv[7]))
+                                                                            : std::nullopt;
 
     std::unique_ptr<Engine> e;
     if (kind == "none") {
@@ -60,7 +64,7 @@ int main(int argc, char** argv) {
             while (!stop.load(std::memory_order_relaxed)) {
                 const std::string& k = keys[xorshift(rng) % keyspace];
                 if (static_cast<int>(xorshift(rng) % 100) < read_pct) e->get(k);
-                else e->set(k, value);
+                else e->set(k, value, ttl);
                 ++ops;
             }
             counters[static_cast<size_t>(t)].ops = ops;
@@ -75,7 +79,9 @@ int main(int argc, char** argv) {
 
     uint64_t total = 0;
     for (auto& c : counters) total += c.ops;
-    std::printf("%s,%d,%zu,%.2f,%llu,%.0f\n", kind.c_str(), threads, e->shards(), elapsed,
+    std::printf("%s,%d,%zu,%.2f,%llu,%.0f", kind.c_str(), threads, e->shards(), elapsed,
                 static_cast<unsigned long long>(total), static_cast<double>(total) / elapsed);
+    if (ttl) std::printf(",ttl_ms=%lld", static_cast<long long>(*ttl));  // extra field only when used: the CSV header is unchanged otherwise
+    std::printf("\n");
     return e->consistent() ? 0 : 1;
 }

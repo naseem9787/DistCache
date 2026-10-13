@@ -1,0 +1,50 @@
+
+### crc
+  bytes=110                                                      ns_per_call=193.0 [189.2..198.2]
+  bytes=4096                                                     ns_per_call=8,297.8 [8,072.8..8,500.0]
+
+### encode
+  value_bytes=64                                                 ns_per_record=282.6 [282.3..284.2]
+  value_bytes=1024                                               ns_per_record=2,183.6 [2,180.8..2,213.4]
+
+### append
+  threads=1 dir=/home/nasee/.distcache-data policy=no            records_per_s=8,411,611.0 [3,772,237.0..9,058,847.0]  ns_per_append_per_thread=119.0 [110.0..265.0]
+  threads=1 dir=/tmp policy=no                                   records_per_s=10,096,328.0 [9,192,002.0..11,369,345.0]  ns_per_append_per_thread=99.0 [88.0..109.0]
+  threads=2 dir=/home/nasee/.distcache-data policy=no            records_per_s=6,958,686.0 [5,424,150.0..7,101,641.0]  ns_per_append_per_thread=287.0 [282.0..369.0]
+  threads=2 dir=/tmp policy=no                                   records_per_s=6,440,649.0 [5,453,380.0..6,826,503.0]  ns_per_append_per_thread=311.0 [293.0..367.0]
+  threads=4 dir=/home/nasee/.distcache-data policy=no            records_per_s=8,685,813.0 [7,830,171.0..9,115,584.0]  ns_per_append_per_thread=461.0 [439.0..511.0]
+  threads=4 dir=/tmp policy=no                                   records_per_s=9,287,235.0 [8,004,175.0..9,441,950.0]  ns_per_append_per_thread=431.0 [424.0..500.0]
+  threads=8 dir=/home/nasee/.distcache-data policy=no            records_per_s=6,506,737.0 [5,069,470.0..7,348,027.0]  ns_per_append_per_thread=1,229.0 [1,089.0..1,578.0]
+  threads=8 dir=/tmp policy=no                                   records_per_s=8,010,135.0 [7,518,867.0..8,029,482.0]  ns_per_append_per_thread=999.0 [996.0..1,064.0]
+
+### write
+  dir=/home/nasee/.distcache-data chunk_kb=64 sync=0             MB_per_s_write_only=2,805.0 [2,642.0..3,716.0]  MB_per_s_incl_sync=2,805.0 [2,642.0..3,716.0]
+  dir=/home/nasee/.distcache-data chunk_kb=64 sync=1             MB_per_s_write_only=4,017.0 [3,324.0..4,216.0]  MB_per_s_incl_sync=1,326.0 [1,243.0..1,374.0]
+  dir=/home/nasee/.distcache-data chunk_kb=1024 sync=0           MB_per_s_write_only=3,910.0 [1,392.0..3,956.0]  MB_per_s_incl_sync=3,910.0 [1,392.0..3,956.0]
+  dir=/home/nasee/.distcache-data chunk_kb=1024 sync=1           MB_per_s_write_only=580.0 [351.0..2,850.0]  MB_per_s_incl_sync=145.0 [64.0..592.0]
+  dir=/tmp chunk_kb=64 sync=0                                    MB_per_s_write_only=4,228.0 [1,823.0..4,702.0]  MB_per_s_incl_sync=4,228.0 [1,823.0..4,702.0]
+  dir=/tmp chunk_kb=64 sync=1                                    MB_per_s_write_only=4,497.0 [4,100.0..4,839.0]  MB_per_s_incl_sync=4,496.0 [4,100.0..4,839.0]
+  dir=/tmp chunk_kb=1024 sync=0                                  MB_per_s_write_only=3,922.0 [3,756.0..3,999.0]  MB_per_s_incl_sync=3,922.0 [3,756.0..3,999.0]
+  dir=/tmp chunk_kb=1024 sync=1                                  MB_per_s_write_only=4,925.0 [4,786.0..5,006.0]  MB_per_s_incl_sync=4,925.0 [4,786.0..5,006.0]
+
+### engine
+  mode=single threads=1 persist=none dir=/home/nasee/.distcache-data ops_per_s=1,809,222.0 [1,651,856.0..1,830,991.0]  ns_per_op_per_thread=553.0 [546.0..605.0]
+  mode=single threads=1 persist=no dir=/home/nasee/.distcache-data ops_per_s=943,014.0 [924,307.0..1,001,060.0]  ns_per_op_per_thread=1,060.0 [999.0..1,082.0]
+  mode=single threads=1 persist=no dir=/tmp                      ops_per_s=968,971.0 [962,287.0..991,453.0]  ns_per_op_per_thread=1,032.0 [1,009.0..1,039.0]
+  mode=single threads=1 persist=everysec dir=/home/nasee/.distcache-data ops_per_s=922,584.0 [304,998.0..1,005,461.0]  ns_per_op_per_thread=1,084.0 [995.0..3,279.0]
+  mode=global threads=4 persist=none dir=/home/nasee/.distcache-data ops_per_s=539,617.0 [447,950.0..572,929.0]  ns_per_op_per_thread=7,413.0 [6,982.0..8,930.0]
+  mode=global threads=4 persist=no dir=/home/nasee/.distcache-data ops_per_s=352,034.0 [351,165.0..359,173.0]  ns_per_op_per_thread=11,363.0 [11,137.0..11,391.0]
+  mode=global threads=4 persist=no dir=/tmp                      ops_per_s=359,797.0 [348,001.0..377,819.0]  ns_per_op_per_thread=11,117.0 [10,587.0..11,494.0]
+  mode=global threads=4 persist=everysec dir=/home/nasee/.distcache-data ops_per_s=369,972.0 [367,244.0..372,126.0]  ns_per_op_per_thread=10,812.0 [10,749.0..10,892.0]
+  mode=sharded threads=1 persist=none dir=/home/nasee/.distcache-data ops_per_s=1,649,918.0 [1,581,348.0..1,654,646.0]  ns_per_op_per_thread=606.0 [604.0..632.0]
+  mode=sharded threads=1 persist=no dir=/home/nasee/.distcache-data ops_per_s=928,419.0 [894,490.0..941,623.0]  ns_per_op_per_thread=1,077.0 [1,062.0..1,118.0]
+  mode=sharded threads=1 persist=no dir=/tmp                     ops_per_s=951,829.0 [935,906.0..976,942.0]  ns_per_op_per_thread=1,051.0 [1,024.0..1,068.0]
+  mode=sharded threads=1 persist=everysec dir=/home/nasee/.distcache-data ops_per_s=925,732.0 [903,990.0..941,358.0]  ns_per_op_per_thread=1,080.0 [1,062.0..1,106.0]
+  mode=sharded threads=4 persist=none dir=/home/nasee/.distcache-data ops_per_s=3,818,206.0 [3,480,220.0..3,866,016.0]  ns_per_op_per_thread=1,048.0 [1,035.0..1,149.0]
+  mode=sharded threads=4 persist=no dir=/home/nasee/.distcache-data ops_per_s=1,740,192.0 [1,714,688.0..1,757,838.0]  ns_per_op_per_thread=2,299.0 [2,276.0..2,333.0]
+  mode=sharded threads=4 persist=no dir=/tmp                     ops_per_s=1,666,478.0 [1,647,666.0..1,699,936.0]  ns_per_op_per_thread=2,400.0 [2,353.0..2,428.0]
+  mode=sharded threads=4 persist=everysec dir=/home/nasee/.distcache-data ops_per_s=1,646,053.0 [1,644,281.0..1,679,856.0]  ns_per_op_per_thread=2,430.0 [2,381.0..2,433.0]
+  mode=sharded threads=8 persist=none dir=/home/nasee/.distcache-data ops_per_s=5,416,102.0 [5,384,502.0..5,754,473.0]  ns_per_op_per_thread=1,477.0 [1,390.0..1,486.0]
+  mode=sharded threads=8 persist=no dir=/home/nasee/.distcache-data ops_per_s=2,094,796.0 [2,025,827.0..2,165,971.0]  ns_per_op_per_thread=3,819.0 [3,693.0..3,949.0]
+  mode=sharded threads=8 persist=no dir=/tmp                     ops_per_s=1,989,075.0 [1,857,757.0..2,009,829.0]  ns_per_op_per_thread=4,022.0 [3,980.0..4,306.0]
+  mode=sharded threads=8 persist=everysec dir=/home/nasee/.distcache-data ops_per_s=1,837,867.0 [1,636,863.0..1,925,923.0]  ns_per_op_per_thread=4,353.0 [4,154.0..4,887.0]

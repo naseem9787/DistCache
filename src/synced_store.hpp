@@ -18,7 +18,33 @@
 #include <tuple>
 #include <vector>
 
+#include "diag.hpp"
 #include "store.hpp"
+
+// Lock guard for a shard. In the normal build this is exactly std::lock_guard. The diagnostics
+// build additionally times how long each acquisition waited and how long the lock was held.
+#ifdef DISTCACHE_DIAGNOSTICS
+class ShardGuard {
+public:
+    explicit ShardGuard(std::mutex& m) : m_(m) {
+        const uint64_t t0 = diag::now_ns();
+        m_.lock();
+        acquired_ = diag::now_ns();
+        diag::c().shard_wait.add(acquired_ - t0);
+    }
+    ~ShardGuard() {
+        diag::c().shard_hold.add(diag::now_ns() - acquired_);
+        m_.unlock();
+    }
+    ShardGuard(const ShardGuard&) = delete;
+    ShardGuard& operator=(const ShardGuard&) = delete;
+private:
+    std::mutex& m_;
+    uint64_t acquired_ = 0;
+};
+#else
+using ShardGuard = std::lock_guard<std::mutex>;
+#endif
 
 // ---------------------------------------------------------------------------
 // One mutex for the whole keyspace. Simple and strictly correct, including a
@@ -119,32 +145,32 @@ public:
 
     void set(const std::string& key, std::string value, std::optional<int64_t> ttl_ms = std::nullopt) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         s.store.set(key, std::move(value), ttl_ms);
     }
     std::optional<std::string> get(const std::string& key) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         return s.store.get(key);
     }
     bool del(const std::string& key) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         return s.store.del(key);
     }
     int64_t ttl_ms(const std::string& key) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         return s.store.ttl_ms(key);
     }
     bool expire(const std::string& key, int64_t ttl_ms) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         return s.store.expire(key, ttl_ms);
     }
     bool persist(const std::string& key) override {
         Shard& s = shard_for(key);
-        std::lock_guard<std::mutex> g(s.mu);
+        ShardGuard g(s.mu);
         return s.store.persist(key);
     }
 
@@ -154,7 +180,7 @@ public:
         size_t removed = 0;
         for (size_t i = 0; i < n && removed < limit; ++i) {
             Shard& s = *shards_[(start + i) % n];
-            std::lock_guard<std::mutex> g(s.mu);  // one shard lock at a time, never nested
+            ShardGuard g(s.mu);  // one shard lock at a time, never nested
             removed += s.store.sweep(limit - removed);
         }
         return removed;

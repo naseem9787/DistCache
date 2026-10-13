@@ -1,1 +1,4 @@
 build/
+results/prof*/profiles/
+__pycache__/
+*.pyc

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="532" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1020" height="532" fill="white"/>
+<text x="10" y="22" font-size="15" font-weight="bold">E7 WAL durability policy: throughput</text>
+<text x="322" y="56" text-anchor="end">SET only, P16: fsync everysec [step1_deferred_ack]</text>
+<rect x="330" y="43" width="179.7" height="18" fill="#4c78a8"/>
+<line x1="470.1" y1="53.0" x2="545.9" y2="53.0" stroke="#222" stroke-width="1.5"/>
+<line x1="470.1" y1="48.0" x2="470.1" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<line x1="545.9" y1="48.0" x2="545.9" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<text x="553.9" y="56">738.0k/s</text>
+<text x="322" y="82" text-anchor="end">SET only, P16: fsync no [baseline]</text>
+<rect x="330" y="69" width="175.2" height="18" fill="#f58518"/>
+<line x1="473.7" y1="79.0" x2="569.6" y2="79.0" stroke="#222" stroke-width="1.5"/>
+<line x1="473.7" y1="74.0" x2="473.7" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<line x1="569.6" y1="74.0" x2="569.6" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<text x="577.6" y="82">719.5k/s</text>
+<text x="322" y="108" text-anchor="end">SET only, P16: fsync always [step2_fast_crc]</text>
+<rect x="330" y="95" width="11.2" height="18" fill="#54a24b"/>
+<line x1="335.1" y1="105.0" x2="344.0" y2="105.0" stroke="#222" stroke-width="1.5"/>
+<line x1="335.1" y1="100.0" x2="335.1" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<line x1="344.0" y1="100.0" x2="344.0" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<text x="352.0" y="108">45.9k/s</text>
+<text x="322" y="134" text-anchor="end">SET only, P16: fsync always [step1_deferred_ack]</text>
+<rect x="330" y="121" width="11.9" height="18" fill="#4c78a8"/>
+<line x1="339.6" y1="131.0" x2="347.0" y2="131.0" stroke="#222" stroke-width="1.5"/>
+<line x1="339.6" y1="126.0" x2="339.6" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<line x1="347.0" y1="126.0" x2="347.0" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<text x="355.0" y="134">48.8k/s</text>
+<text x="322" y="160" text-anchor="end">SET only, P16: fsync everysec [baseline]</text>
+<rect x="330" y="147" width="156.9" height="18" fill="#f58518"/>
+<line x1="457.4" y1="157.0" x2="537.5" y2="157.0" stroke="#222" stroke-width="1.5"/>
+<line x1="457.4" y1="152.0" x2="457.4" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<line x1="537.5" y1="152.0" x2="537.5" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<text x="545.5" y="160">644.1k/s</text>
+<text x="322" y="186" text-anchor="end">SET only, P1: fsync always [baseline]</text>
+<rect x="330" y="173" width="1.0" height="18" fill="#b279a2"/>
+<line x1="330.0" y1="183.0" x2="330.1" y2="183.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.0" y1="178.0" x2="330.0" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.1" y1="178.0" x2="330.1" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<text x="338.1" y="186">240/s</text>
+<text x="322" y="212" text-anchor="end">SET only, P16: fsync no [final]</text>
+<rect x="330" y="199" width="186.2" height="18" fill="#e45756"/>
+<line x1="447.5" y1="209.0" x2="618.8" y2="209.0" stroke="#222" stroke-width="1.5"/>
+<line x1="447.5" y1="204.0" x2="447.5" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<line x1="618.8" y1="204.0" x2="618.8" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<text x="626.8" y="212">764.6k/s</text>
+<text x="322" y="238" text-anchor="end">SET only, P16: fsync always [baseline]</text>
+<rect x="330" y="225" width="1.0" height="18" fill="#f58518"/>
+<line x1="330.7" y1="235.0" x2="331.3" y2="235.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.7" y1="230.0" x2="330.7" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<line x1="331.3" y1="230.0" x2="331.3" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<text x="339.3" y="238">4.1k/s</text>
+<text x="322" y="264" text-anchor="end">SET only, P1: fsync always [final]</text>
+<rect x="330" y="251" width="1.0" height="18" fill="#72b7b2"/>
+<line x1="330.4" y1="261.0" x2="331.1" y2="261.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.4" y1="256.0" x2="330.4" y2="266.0" stroke="#222" stroke-width="1.5"/>
+<line x1="331.1" y1="256.0" x2="331.1" y2="266.0" stroke="#222" stroke-width="1.5"/>
+<text x="339.1" y="264">2.9k/s</text>
+<text x="322" y="290" text-anchor="end">SET only, P16: fsync no [step1_deferred_ack]</text>
+<rect x="330" y="277" width="182.2" height="18" fill="#4c78a8"/>
+<line x1="495.1" y1="287.0" x2="616.0" y2="287.0" stroke="#222" stroke-width="1.5"/>
+<line x1="495.1" y1="282.0" x2="495.1" y2="292.0" stroke="#222" stroke-width="1.5"/>
+<line x1="616.0" y1="282.0" x2="616.0" y2="292.0" stroke="#222" stroke-width="1.5"/>
+<text x="624.0" y="290">748.0k/s</text>
+<text x="322" y="316" text-anchor="end">SET only, P16: fsync everysec [step2_fast_crc]</text>
+<rect x="330" y="303" width="177.1" height="18" fill="#54a24b"/>
+<line x1="428.8" y1="313.0" x2="580.9" y2="313.0" stroke="#222" stroke-width="1.5"/>
+<line x1="428.8" y1="308.0" x2="428.8" y2="318.0" stroke="#222" stroke-width="1.5"/>
+<line x1="580.9" y1="308.0" x2="580.9" y2="318.0" stroke="#222" stroke-width="1.5"/>
+<text x="588.9" y="316">727.0k/s</text>
+<text x="322" y="342" text-anchor="end">SET only, P16: fsync everysec [final]</text>
+<rect x="330" y="329" width="142.4" height="18" fill="#e45756"/>
+<line x1="409.4" y1="339.0" x2="620.1" y2="339.0" stroke="#222" stroke-width="1.5"/>
+<line x1="409.4" y1="334.0" x2="409.4" y2="344.0" stroke="#222" stroke-width="1.5"/>
+<line x1="620.1" y1="334.0" x2="620.1" y2="344.0" stroke="#222" stroke-width="1.5"/>
+<text x="628.1" y="342">584.9k/s</text>
+<text x="322" y="368" text-anchor="end">SET only, P16: fsync no [step2_fast_crc]</text>
+<rect x="330" y="355" width="224.6" height="18" fill="#54a24b"/>
+<line x1="481.1" y1="365.0" x2="614.2" y2="365.0" stroke="#222" stroke-width="1.5"/>
+<line x1="481.1" y1="360.0" x2="481.1" y2="370.0" stroke="#222" stroke-width="1.5"/>
+<line x1="614.2" y1="360.0" x2="614.2" y2="370.0" stroke="#222" stroke-width="1.5"/>
+<text x="622.2" y="368">922.1k/s</text>
+<text x="322" y="394" text-anchor="end">SET only, P1: fsync always [step1_deferred_ack]</text>
+<rect x="330" y="381" width="1.0" height="18" fill="#9d755d"/>
+<line x1="330.6" y1="391.0" x2="330.9" y2="391.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.6" y1="386.0" x2="330.6" y2="396.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.9" y1="386.0" x2="330.9" y2="396.0" stroke="#222" stroke-width="1.5"/>
+<text x="338.9" y="394">3.2k/s</text>
+<text x="322" y="420" text-anchor="end">SET only, P16: fsync always [final]</text>
+<rect x="330" y="407" width="12.0" height="18" fill="#e45756"/>
+<line x1="338.4" y1="417.0" x2="346.8" y2="417.0" stroke="#222" stroke-width="1.5"/>
+<line x1="338.4" y1="412.0" x2="338.4" y2="422.0" stroke="#222" stroke-width="1.5"/>
+<line x1="346.8" y1="412.0" x2="346.8" y2="422.0" stroke="#222" stroke-width="1.5"/>
+<text x="354.8" y="420">49.2k/s</text>
+<text x="322" y="446" text-anchor="end">SET only, P1: fsync always [step2_fast_crc]</text>
+<rect x="330" y="433" width="1.0" height="18" fill="#bab0ac"/>
+<line x1="330.7" y1="443.0" x2="331.1" y2="443.0" stroke="#222" stroke-width="1.5"/>
+<line x1="330.7" y1="438.0" x2="330.7" y2="448.0" stroke="#222" stroke-width="1.5"/>
+<line x1="331.1" y1="438.0" x2="331.1" y2="448.0" stroke="#222" stroke-width="1.5"/>
+<text x="339.1" y="446">3.4k/s</text>
+<text x="322" y="472" text-anchor="end">SET only, P16: no persistence [baseline]</text>
+<rect x="330" y="459" width="521.4" height="18" fill="#f58518"/>
+<line x1="627.8" y1="469.0" x2="890.0" y2="469.0" stroke="#222" stroke-width="1.5"/>
+<line x1="627.8" y1="464.0" x2="627.8" y2="474.0" stroke="#222" stroke-width="1.5"/>
+<line x1="890.0" y1="464.0" x2="890.0" y2="474.0" stroke="#222" stroke-width="1.5"/>
+<text x="898.0" y="472">2,140.9k/s</text>
+<text x="330" y="506" fill="#555">requests per second (bar = median, whisker = min..max over all runs)</text>
+</svg>

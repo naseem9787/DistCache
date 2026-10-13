@@ -61,6 +61,31 @@ std::string make_log(int n, std::vector<size_t>* ends, std::vector<std::string>*
 
 }  // namespace
 
+// The original byte-at-a-time implementation, kept here as the reference the optimized one must match.
+static uint32_t reference_crc32(const unsigned char* p, size_t n) {
+    uint32_t table[256];
+    for (uint32_t i = 0; i < 256; ++i) {
+        uint32_t c = i;
+        for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        table[i] = c;
+    }
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; ++i) crc = table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFFu;
+}
+
+TEST(Crc32, FastImplementationEqualsTheReferenceForEveryLengthAndAlignment) {
+    std::vector<unsigned char> buf(4096 + 16);
+    uint32_t x = 12345;
+    for (auto& b : buf) { x = x * 1664525u + 1013904223u; b = static_cast<unsigned char>(x >> 24); }
+    for (size_t offset = 0; offset < 9; ++offset)                    // every alignment
+        for (size_t len = 0; len <= 300; ++len)                      // every short length (0..300)
+            ASSERT_EQ(crc32(buf.data() + offset, len), reference_crc32(buf.data() + offset, len))
+                << "offset " << offset << " len " << len;
+    for (size_t len : {511u, 512u, 513u, 1000u, 4095u, 4096u})       // and some long ones
+        ASSERT_EQ(crc32(buf.data() + 3, len), reference_crc32(buf.data() + 3, len)) << len;
+}
+
 TEST(Crc32, MatchesTheStandardCheckValue) {
     EXPECT_EQ(crc32("123456789", 9), 0xCBF43926u);  // the canonical CRC-32 test vector
     EXPECT_EQ(crc32("", 0), 0u);

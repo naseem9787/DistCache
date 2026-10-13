@@ -25,11 +25,28 @@ add_executable(bench_engine bench/bench_engine.cpp)
 target_link_libraries(bench_engine distcache_core)
 add_executable(bench_lru_accuracy bench/bench_lru_accuracy.cpp)
 target_link_libraries(bench_lru_accuracy distcache_core)
+add_executable(bench_wal bench/bench_wal.cpp)  # production code only: measures the normal build
+target_link_libraries(bench_wal distcache_core)
+
+# Diagnostics build: nanosecond timers around each step of a logged write and an in-process
+# sampling profiler. Separate target so the production server has none of it. Use it to ATTRIBUTE
+# time, never for headline throughput numbers.
+add_library(distcache_core_diag src/resp.cpp src/commands.cpp src/server.cpp src/wal.cpp src/persistence.cpp src/diag.cpp)
+target_include_directories(distcache_core_diag PUBLIC src)
+target_compile_definitions(distcache_core_diag PUBLIC DISTCACHE_DIAGNOSTICS)
+target_compile_options(distcache_core_diag PUBLIC -g -fno-omit-frame-pointer)
+target_link_libraries(distcache_core_diag PUBLIC Threads::Threads)
+add_executable(distcache_diag src/main.cpp)
+target_link_libraries(distcache_diag distcache_core_diag)
+
+add_executable(distcache_loadgen bench/loadgen.cpp)  # standalone: links nothing from the server
+target_link_libraries(distcache_loadgen Threads::Threads)
 
 enable_testing()
 find_package(GTest REQUIRED)
 add_executable(distcache_tests
   tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp
-  tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp)
+  tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp
+  tests/test_deferred.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)

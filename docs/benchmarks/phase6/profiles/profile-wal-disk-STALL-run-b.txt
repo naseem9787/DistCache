@@ -1,0 +1,78 @@
+4898 samples; breakdown by thread:
+  worker        4656   95.1% of all CPU samples
+  flusher        220    4.5% of all CPU samples
+  other           11    0.2% of all CPU samples
+  accept           8    0.2% of all CPU samples
+  snapshot         3    0.1% of all CPU samples
+
+=== thread: worker  (4656 samples)
+  self time (function the CPU was executing):
+     38.7%  [unresolved library/kernel]
+     32.7%  __sched_yield [libc.so.6]
+      4.7%  std::__detail::_Hashtable_base<std::string, std::pair<std::string const, Store::Entry>,...
+      4.0%  _ZNSt8__detail15_List_node_base11_M_transferEPS0_S1_ [libstdc++.so.6]
+      2.8%  std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const
+      1.2%  clock_gettime [lib]
+      1.1%  std::__atomic_base<unsigned long>::fetch_add(unsigned long, std::memory_order)
+      1.0%  std::_Hashtable<std::string, std::pair<std::string const, Store::Entry>, std::allocator...
+      1.0%  std::__atomic_base<bool>::load(std::memory_order) const
+      0.9%  __libc_free [libc.so.6]
+      0.9%  _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_appendEPKcm [libstdc++.so.6]
+      0.8%  SpinMutex::lock()
+      0.8%  std::char_traits<char>::assign(char&, char const&)
+      0.6%  epoll_ctl [libc.so.6]
+      0.5%  pthread_mutex_lock [libc.so.6]
+      0.5%  crc32(void const*, unsigned long)
+      0.5%  parse_command(std::basic_string_view<char, std::char_traits<char> >)
+      0.4%  std::__atomic_base<unsigned long>::load(std::memory_order) const
+      0.4%  __mprotect [libc.so.6]
+      0.3%  std::vector<std::string, std::allocator<std::string > >::operator[](unsigned long) const
+  inclusive time (function anywhere on the stack):
+    100.0%  [unresolved library/kernel]
+     99.9%  Server::Worker::run()
+     99.3%  Server::Worker::on_readable(int)
+     70.8%  process_input
+     68.3%  std::string::size() const
+     68.2%  std::string::operator+=(std::string const&)
+     68.2%  std::string::append(std::string const&)
+     68.1%  execute(Engine&, std::vector<std::string, std::allocator<std::string > > const&, Comman...
+     67.6%  cmd_set
+     66.4%  std::string::_M_data() const
+     66.3%  std::string::_M_is_local() const
+     66.3%  std::string::_M_dispose()
+     66.3%  std::string::~basic_string()
+     63.6%  ShardedStore::set(std::string const&, std::string, std::optional<long>)
+     41.8%  Wal::append_framed(std::basic_string_view<char, std::char_traits<char> >)
+     34.7%  std::unique_lock<SpinMutex>::lock()
+     34.7%  SpinMutex::lock()
+     32.8%  std::this_thread::yield()
+     32.7%  __sched_yield [libc.so.6]
+     26.1%  Server::Worker::flush(int)
+
+=== thread: flusher  (220 samples)
+  self time (function the CPU was executing):
+     61.4%  [unresolved library/kernel]
+     36.8%  __sched_yield [libc.so.6]
+      0.9%  clock_gettime [libc.so.6]
+      0.9%  _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE4swapERS4_ [libstdc++.so.6]
+  inclusive time (function anywhere on the stack):
+    100.0%  Wal::flusher_loop()
+    100.0%  [unresolved library/kernel]
+     98.2%  __gthread_mutex_unlock(pthread_mutex_t*)
+     98.2%  std::lock_guard<std::mutex>::~lock_guard()
+     98.2%  std::mutex::unlock()
+     98.2%  Wal::flush_locked_io(bool)
+     59.5%  __write [libc.so.6]
+     59.5%  Wal::write_all(char const*, unsigned long)
+     36.8%  SpinMutex::lock()
+     36.8%  std::lock_guard<SpinMutex>::lock_guard(SpinMutex&)
+     36.8%  __sched_yield [libc.so.6]
+     36.8%  std::this_thread::yield()
+      1.8%  std::cv_status std::condition_variable::__wait_until_impl<std::chrono::duration<long, s...
+      1.8%  wait_until<std::chrono::_V2::steady_clock, std::chrono::duration<long int, std::ratio<1...
+      1.8%  std::cv_status std::condition_variable::wait_until<std::chrono::duration<long, std::rat...
+      1.8%  wait_for<long int, std::ratio<1, 1000>, Wal::flusher_loop()::<lambda()> >
+      1.8%  pthread_cond_clockwait [libc.so.6]
+      0.9%  diag::Scoped::~Scoped()
+      0.9%  _ZNSt6chrono3_V212steady_clock3nowEv [libstdc++.so.6]
+      0.9%  clock_gettime [libc.so.6]

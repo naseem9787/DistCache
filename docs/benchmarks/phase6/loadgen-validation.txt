@@ -1,0 +1,16 @@
+server: sharded, 4 workers, pinned to CPUs 0-5; load tools pinned to CPUs 6-11
+workload                   tool         requests/s     p50 us     p99 us   tool cpu
+SET only, 50 cl, P1        loadgen          419098         86        385          -
+SET only, 50 cl, P1        redis-bm         342710         79        383          -
+SET only, 50 cl, P1        loadgen          433303         84        320          -
+SET only, 50 cl, P1        redis-bm         355450         79        335          -
+SET only, 50 cl, P1        loadgen          430226         86        336          -
+SET only, 50 cl, P1        redis-bm         355450         79        359          -
+SET only, 50 cl, P16       loadgen         1973274        344       1081          -
+SET only, 50 cl, P16       redis-bm        1696558        399       1231          -
+SET only, 50 cl, P16       loadgen         1920818        352       1212          -
+SET only, 50 cl, P16       redis-bm        1187951        455       3575          -
+SET only, 50 cl, P16       loadgen         1682020        369       1900          -
+SET only, 50 cl, P16       redis-bm        1696558        407       1239          -
+pipeline 1: loadgen counted 1117200 SETs; server logged 1117250 records; difference 50 (in-flight at stop: <= 50)
+pipeline 8: loadgen counted 4645048 SETs; server logged 4645144 records; difference 96 (in-flight at stop: <= 400)

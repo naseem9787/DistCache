@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="220" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1020" height="220" fill="white"/>
+<text x="10" y="22" font-size="15" font-weight="bold">E6 LRU eviction cost: p99 latency</text>
+<text x="322" y="56" text-anchor="end">capacity 200k (no eviction)</text>
+<rect x="330" y="43" width="89.3" height="18" fill="#4c78a8"/>
+<line x1="408.8" y1="53.0" x2="890.0" y2="53.0" stroke="#222" stroke-width="1.5"/>
+<line x1="408.8" y1="48.0" x2="408.8" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<line x1="890.0" y1="48.0" x2="890.0" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<text x="898.0" y="56">836 us</text>
+<text x="322" y="82" text-anchor="end">capacity 50k, uniform</text>
+<rect x="330" y="69" width="97.1" height="18" fill="#4c78a8"/>
+<line x1="410.5" y1="79.0" x2="463.0" y2="79.0" stroke="#222" stroke-width="1.5"/>
+<line x1="410.5" y1="74.0" x2="410.5" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<line x1="463.0" y1="74.0" x2="463.0" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<text x="471.0" y="82">909 us</text>
+<text x="322" y="108" text-anchor="end">unlimited</text>
+<rect x="330" y="95" width="109.4" height="18" fill="#4c78a8"/>
+<line x1="408.8" y1="105.0" x2="673.0" y2="105.0" stroke="#222" stroke-width="1.5"/>
+<line x1="408.8" y1="100.0" x2="408.8" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<line x1="673.0" y1="100.0" x2="673.0" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<text x="681.0" y="108">1.02 ms</text>
+<text x="322" y="134" text-anchor="end">capacity 10k, uniform</text>
+<rect x="330" y="121" width="108.5" height="18" fill="#4c78a8"/>
+<line x1="412.2" y1="131.0" x2="477.0" y2="131.0" stroke="#222" stroke-width="1.5"/>
+<line x1="412.2" y1="126.0" x2="412.2" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<line x1="477.0" y1="126.0" x2="477.0" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<text x="485.0" y="134">1.02 ms</text>
+<text x="322" y="160" text-anchor="end">capacity 50k, zipf 0.99</text>
+<rect x="330" y="147" width="81.4" height="18" fill="#4c78a8"/>
+<line x1="394.7" y1="157.0" x2="445.5" y2="157.0" stroke="#222" stroke-width="1.5"/>
+<line x1="394.7" y1="152.0" x2="394.7" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<line x1="445.5" y1="152.0" x2="445.5" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<text x="453.5" y="160">762 us</text>
+<text x="330" y="194" fill="#555">microseconds (lower is better) (bar = median, whisker = min..max over all runs)</text>
+</svg>

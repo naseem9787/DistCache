@@ -1,6 +1,7 @@
 #include "persistence.hpp"
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -11,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "diag.hpp"
 #include "resp.hpp"
 
 namespace {
@@ -186,7 +188,10 @@ bool Persistence::open(RecoveryStats* recovery, std::string* error) {
     }
 
     engine_.set_observer(nullptr);  // replay must not be logged again
+    const auto rec_t0 = std::chrono::steady_clock::now();
     if (!recover(st, &err)) { *error = err; close(); return false; }
+    recovery_ms_ = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now() - rec_t0).count());
 
     uint64_t next = 1;
     for (uint64_t id : list_ids(opts_.dir, "wal-", ".log")) next = std::max(next, id + 1);
@@ -194,6 +199,7 @@ bool Persistence::open(RecoveryStats* recovery, std::string* error) {
 
     wal_ = std::make_unique<Wal>(opts_.dir, opts_.fsync);
     if (!wal_->open(next, &err)) { *error = err; close(); return false; }
+    wal_->set_durable_callback([this] { notify_listeners(); });  // before start(): the flusher reads it
     wal_->start();
     engine_.set_observer(this);
     open_ = true;
@@ -216,60 +222,60 @@ void Persistence::close() {
     if (lock_fd_ >= 0) { ::close(lock_fd_); lock_fd_ = -1; }
 }
 
+// --- durability notifications -----------------------------------------------------
+
+int Persistence::add_durable_listener(std::function<void()> fn) {
+    std::lock_guard<std::mutex> g(listeners_mu_);
+    const int id = next_listener_id_++;
+    listeners_.emplace_back(id, std::move(fn));
+    return id;
+}
+
+void Persistence::remove_durable_listener(int id) {
+    std::lock_guard<std::mutex> g(listeners_mu_);  // also waits out a notify_listeners() in progress
+    for (auto it = listeners_.begin(); it != listeners_.end(); ++it)
+        if (it->first == id) { listeners_.erase(it); return; }
+}
+
+void Persistence::notify_listeners() {  // flusher thread
+    std::lock_guard<std::mutex> g(listeners_mu_);
+    for (auto& l : listeners_) l.second();  // each just writes an eventfd
+}
+
 // --- logging (observer callbacks) ----------------------------------------------
 
 // These run INSIDE the engine's lock for every write, so each one encodes its record straight
 // into a per-thread buffer that is reused (no vector, no temporary strings, no per-record
 // allocation once warm) and hands the finished frame to the log with a single memcpy.
 namespace {
-
-thread_local std::string tl_frame;
-
-void begin_record(size_t argc) {
-    tl_frame.assign(8, '\0');  // room for the [len][crc] header, filled in by finish_record
-    tl_frame += '*';
-    tl_frame += std::to_string(argc);
-    tl_frame += "\r\n";
-}
-void add_arg(std::string_view a) {
-    tl_frame += '$';
-    tl_frame += std::to_string(a.size());
-    tl_frame += "\r\n";
-    tl_frame.append(a);
-    tl_frame += "\r\n";
-}
-std::string_view finish_record() {
-    const uint32_t len = static_cast<uint32_t>(tl_frame.size() - 8);
-    const uint32_t crc = crc32(tl_frame.data() + 8, len);
-    for (int i = 0; i < 4; ++i) {
-        tl_frame[static_cast<size_t>(i)] = static_cast<char>((len >> (8 * i)) & 0xFF);
-        tl_frame[static_cast<size_t>(4 + i)] = static_cast<char>((crc >> (8 * i)) & 0xFF);
-    }
-    return tl_frame;
-}
-
+thread_local RecordBuilder tl_rec;
 }  // namespace
 
 void Persistence::on_set(const std::string& key, const std::string& value, std::optional<int64_t> ttl_ms) {
-    begin_record(ttl_ms ? 5 : 3);
-    add_arg("SET"); add_arg(key); add_arg(value);
-    if (ttl_ms) { add_arg("PXAT"); add_arg(std::to_string(wall() + *ttl_ms)); }
-    wal_->append_framed(finish_record());
+    std::string_view framed;
+    {
+        DC_SCOPED(encode);
+        tl_rec.begin(ttl_ms ? 5 : 3);
+        tl_rec.arg("SET"); tl_rec.arg(key); tl_rec.arg(value);
+        if (ttl_ms) { tl_rec.arg("PXAT"); tl_rec.arg(std::to_string(wall() + *ttl_ms)); }
+        framed = tl_rec.finish();
+    }
+    wal_->append_framed(framed);
 }
 void Persistence::on_del(const std::string& key) {
-    begin_record(2);
-    add_arg("DEL"); add_arg(key);
-    wal_->append_framed(finish_record());
+    tl_rec.begin(2);
+    tl_rec.arg("DEL"); tl_rec.arg(key);
+    wal_->append_framed(tl_rec.finish());
 }
 void Persistence::on_expire(const std::string& key, int64_t ttl_ms) {
-    begin_record(3);
-    add_arg("PEXPIREAT"); add_arg(key); add_arg(std::to_string(wall() + ttl_ms));
-    wal_->append_framed(finish_record());
+    tl_rec.begin(3);
+    tl_rec.arg("PEXPIREAT"); tl_rec.arg(key); tl_rec.arg(std::to_string(wall() + ttl_ms));
+    wal_->append_framed(tl_rec.finish());
 }
 void Persistence::on_persist(const std::string& key) {
-    begin_record(2);
-    add_arg("PERSIST"); add_arg(key);
-    wal_->append_framed(finish_record());
+    tl_rec.begin(2);
+    tl_rec.arg("PERSIST"); tl_rec.arg(key);
+    wal_->append_framed(tl_rec.finish());
 }
 
 // --- snapshots ------------------------------------------------------------------
@@ -324,6 +330,8 @@ bool Persistence::snapshot(std::string* error) {
 }
 
 void Persistence::snapshot_loop() {
+    pthread_setname_np(pthread_self(), "dc-snapshot");
+    DC_TAG_THREAD("snapshot");
     std::unique_lock<std::mutex> lk(stop_mu_);
     while (!stopping_) {
         stop_cv_.wait_for(lk, std::chrono::milliseconds(500), [&] { return stopping_; });
@@ -350,6 +358,7 @@ Persistence::Stats Persistence::stats() const {
 std::string Persistence::info() {
     Stats s = stats();
     return "# Persistence\r\nenabled:yes\r\nfsync:" + std::string(to_string(opts_.fsync)) +
+           "\r\nrecovery_ms:" + std::to_string(recovery_ms_) +
            "\r\nwal_segment:" + std::to_string(s.wal.segment_id) +
            "\r\nwal_segment_bytes:" + std::to_string(s.wal.segment_bytes) +
            "\r\nwal_records:" + std::to_string(s.wal.records) +

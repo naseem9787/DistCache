@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="402" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1020" height="402" fill="white"/>
+<text x="10" y="22" font-size="15" font-weight="bold">E2 Client count: throughput</text>
+<text x="322" y="56" text-anchor="end">50 clients, P1</text>
+<rect x="330" y="43" width="97.8" height="18" fill="#4c78a8"/>
+<line x1="420.3" y1="53.0" x2="433.2" y2="53.0" stroke="#222" stroke-width="1.5"/>
+<line x1="420.3" y1="48.0" x2="420.3" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<line x1="433.2" y1="48.0" x2="433.2" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<text x="441.2" y="56">371.1k/s</text>
+<text x="322" y="82" text-anchor="end">4 clients, P1</text>
+<rect x="330" y="69" width="15.9" height="18" fill="#4c78a8"/>
+<line x1="343.7" y1="79.0" x2="346.3" y2="79.0" stroke="#222" stroke-width="1.5"/>
+<line x1="343.7" y1="74.0" x2="343.7" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<line x1="346.3" y1="74.0" x2="346.3" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<text x="354.3" y="82">60.3k/s</text>
+<text x="322" y="108" text-anchor="end">256 clients, P16</text>
+<rect x="330" y="95" width="444.0" height="18" fill="#f58518"/>
+<line x1="616.1" y1="105.0" x2="834.9" y2="105.0" stroke="#222" stroke-width="1.5"/>
+<line x1="616.1" y1="100.0" x2="616.1" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<line x1="834.9" y1="100.0" x2="834.9" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<text x="842.9" y="108">1,685.0k/s</text>
+<text x="322" y="134" text-anchor="end">16 clients, P1</text>
+<rect x="330" y="121" width="67.8" height="18" fill="#4c78a8"/>
+<line x1="379.1" y1="131.0" x2="401.3" y2="131.0" stroke="#222" stroke-width="1.5"/>
+<line x1="379.1" y1="126.0" x2="379.1" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<line x1="401.3" y1="126.0" x2="401.3" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<text x="409.3" y="134">257.1k/s</text>
+<text x="322" y="160" text-anchor="end">64 clients, P16</text>
+<rect x="330" y="147" width="507.3" height="18" fill="#f58518"/>
+<line x1="743.1" y1="157.0" x2="890.0" y2="157.0" stroke="#222" stroke-width="1.5"/>
+<line x1="743.1" y1="152.0" x2="743.1" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<line x1="890.0" y1="152.0" x2="890.0" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<text x="898.0" y="160">1,924.9k/s</text>
+<text x="322" y="186" text-anchor="end">4 clients, P16</text>
+<rect x="330" y="173" width="190.9" height="18" fill="#f58518"/>
+<line x1="485.3" y1="183.0" x2="532.3" y2="183.0" stroke="#222" stroke-width="1.5"/>
+<line x1="485.3" y1="178.0" x2="485.3" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<line x1="532.3" y1="178.0" x2="532.3" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<text x="540.3" y="186">724.5k/s</text>
+<text x="322" y="212" text-anchor="end">64 clients, P1</text>
+<rect x="330" y="199" width="116.8" height="18" fill="#4c78a8"/>
+<line x1="442.7" y1="209.0" x2="450.1" y2="209.0" stroke="#222" stroke-width="1.5"/>
+<line x1="442.7" y1="204.0" x2="442.7" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<line x1="450.1" y1="204.0" x2="450.1" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<text x="458.1" y="212">443.3k/s</text>
+<text x="322" y="238" text-anchor="end">1 clients, P16</text>
+<rect x="330" y="225" width="53.2" height="18" fill="#f58518"/>
+<line x1="382.0" y1="235.0" x2="383.6" y2="235.0" stroke="#222" stroke-width="1.5"/>
+<line x1="382.0" y1="230.0" x2="382.0" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<line x1="383.6" y1="230.0" x2="383.6" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<text x="391.6" y="238">201.8k/s</text>
+<text x="322" y="264" text-anchor="end">50 clients, P16</text>
+<rect x="330" y="251" width="477.3" height="18" fill="#f58518"/>
+<line x1="789.9" y1="261.0" x2="853.4" y2="261.0" stroke="#222" stroke-width="1.5"/>
+<line x1="789.9" y1="256.0" x2="789.9" y2="266.0" stroke="#222" stroke-width="1.5"/>
+<line x1="853.4" y1="256.0" x2="853.4" y2="266.0" stroke="#222" stroke-width="1.5"/>
+<text x="861.4" y="264">1,811.2k/s</text>
+<text x="322" y="290" text-anchor="end">256 clients, P1</text>
+<rect x="330" y="277" width="128.3" height="18" fill="#4c78a8"/>
+<line x1="445.0" y1="287.0" x2="466.5" y2="287.0" stroke="#222" stroke-width="1.5"/>
+<line x1="445.0" y1="282.0" x2="445.0" y2="292.0" stroke="#222" stroke-width="1.5"/>
+<line x1="466.5" y1="282.0" x2="466.5" y2="292.0" stroke="#222" stroke-width="1.5"/>
+<text x="474.5" y="290">486.7k/s</text>
+<text x="322" y="316" text-anchor="end">16 clients, P16</text>
+<rect x="330" y="303" width="485.3" height="18" fill="#f58518"/>
+<line x1="532.3" y1="313.0" x2="849.5" y2="313.0" stroke="#222" stroke-width="1.5"/>
+<line x1="532.3" y1="308.0" x2="532.3" y2="318.0" stroke="#222" stroke-width="1.5"/>
+<line x1="849.5" y1="308.0" x2="849.5" y2="318.0" stroke="#222" stroke-width="1.5"/>
+<text x="857.5" y="316">1,841.6k/s</text>
+<text x="322" y="342" text-anchor="end">1 clients, P1</text>
+<rect x="330" y="329" width="4.6" height="18" fill="#4c78a8"/>
+<line x1="334.5" y1="339.0" x2="334.7" y2="339.0" stroke="#222" stroke-width="1.5"/>
+<line x1="334.5" y1="334.0" x2="334.5" y2="344.0" stroke="#222" stroke-width="1.5"/>
+<line x1="334.7" y1="334.0" x2="334.7" y2="344.0" stroke="#222" stroke-width="1.5"/>
+<text x="342.7" y="342">17.3k/s</text>
+<text x="330" y="376" fill="#555">requests per second (bar = median, whisker = min..max over all runs)</text>
+</svg>

@@ -1,0 +1,9 @@
+# kill -9 crash test on the final binary, 25 random kills per row, 4 writer connections, data on ext4
+# (SIGKILL: the OS survives, so this measures the process-crash window, NOT power loss)
+policy     snap_mb rounds  acked writes  lost acked  worst round rounds w/ loss  holes  corrupt
+always          64     25         20110           0            0              0      0        0
+everysec        64     25        228524        1795          137             25      0        0
+no              64     25        252516        1516          135             25      0        0
+# same, snapshot threshold 1 MiB so kills land around snapshots
+policy     snap_mb rounds  acked writes  lost acked  worst round rounds w/ loss  holes  corrupt
+always           1     25         21867           0            0              0      0        0

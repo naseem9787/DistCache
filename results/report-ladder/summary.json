@@ -1,0 +1,189 @@
+{
+ "E7|SET only, P16: fsync everysec|step1_deferred_ack": {
+  "n": 6,
+  "rps_median": 738018.0,
+  "rps_min": 575054.0,
+  "rps_max": 886660.0,
+  "rps_cv": 14.440248990840782,
+  "p50": 639.0,
+  "p95": 1622.0,
+  "p99": 2621.45,
+  "cpu_cores": 2.6602223715295086
+ },
+ "E7|SET only, P16: fsync no|baseline": {
+  "n": 6,
+  "rps_median": 719506.0,
+  "rps_min": 590058.0,
+  "rps_max": 983886.0,
+  "rps_cv": 21.2400387811409,
+  "p50": 565.25,
+  "p95": 1261.6,
+  "p99": 2048.0,
+  "cpu_cores": 2.959918540396341
+ },
+ "E7|SET only, P16: fsync always|step2_fast_crc": {
+  "n": 6,
+  "rps_median": 45882.0,
+  "rps_min": 21050.0,
+  "rps_max": 57356.0,
+  "rps_cv": 27.930269801997227,
+  "p50": 13631.5,
+  "p95": 36700.15,
+  "p99": 86507.55,
+  "cpu_cores": 0.21141543036967875
+ },
+ "E7|SET only, P16: fsync always|step1_deferred_ack": {
+  "n": 6,
+  "rps_median": 48825.0,
+  "rps_min": 39430.0,
+  "rps_max": 69836.0,
+  "rps_cv": 23.080418233192997,
+  "p50": 13631.45,
+  "p95": 35651.600000000006,
+  "p99": 49283.05,
+  "cpu_cores": 0.22111344537815125
+ },
+ "E7|SET only, P16: fsync everysec|baseline": {
+  "n": 6,
+  "rps_median": 644134.0,
+  "rps_min": 523090.0,
+  "rps_max": 851964.0,
+  "rps_cv": 18.115677896097914,
+  "p50": 622.6,
+  "p95": 1490.95,
+  "p99": 2457.6000000000004,
+  "cpu_cores": 2.7680018480018482
+ },
+ "E7|SET only, P1: fsync always|baseline": {
+  "n": 6,
+  "rps_median": 239.5,
+  "rps_min": 124.5,
+  "rps_max": 319.0,
+  "rps_cv": 28.06041089082457,
+  "p50": 184549.4,
+  "p95": 373293.1,
+  "p99": 595591.15,
+  "cpu_cores": 0.046036751843828244
+ },
+ "E7|SET only, P16: fsync no|final": {
+  "n": 6,
+  "rps_median": 764641.0,
+  "rps_min": 482540.0,
+  "rps_max": 1185970.0,
+  "rps_cv": 33.852302948875575,
+  "p50": 458.75,
+  "p95": 1032.15,
+  "p99": 1966.0500000000002,
+  "cpu_cores": 2.838979775015888
+ },
+ "E7|SET only, P16: fsync always|baseline": {
+  "n": 6,
+  "rps_median": 4124.0,
+  "rps_min": 2944.0,
+  "rps_max": 5534.0,
+  "rps_cv": 22.261955938416065,
+  "p50": 163577.9,
+  "p95": 335544.3,
+  "p99": 515899.35000000003,
+  "cpu_cores": 0.06334119499441351
+ },
+ "E7|SET only, P1: fsync always|final": {
+  "n": 6,
+  "rps_median": 2870.05,
+  "rps_min": 1508.8,
+  "rps_max": 4332.8,
+  "rps_cv": 34.40030482190665,
+  "p50": 12845.05,
+  "p95": 44564.5,
+  "p99": 56098.8,
+  "cpu_cores": 0.09620059461350122
+ },
+ "E7|SET only, P16: fsync no|step1_deferred_ack": {
+  "n": 6,
+  "rps_median": 748016.0,
+  "rps_min": 677778.0,
+  "rps_max": 1174172.0,
+  "rps_cv": 23.758656268432933,
+  "p50": 573.4,
+  "p95": 1359.85,
+  "p99": 2654.25,
+  "cpu_cores": 3.219576069473103
+ },
+ "E7|SET only, P16: fsync everysec|step2_fast_crc": {
+  "n": 6,
+  "rps_median": 727043.0,
+  "rps_min": 405870.0,
+  "rps_max": 1030094.0,
+  "rps_cv": 29.337073241385745,
+  "p50": 589.8,
+  "p95": 1441.8,
+  "p99": 2359.3,
+  "cpu_cores": 2.5871133033039158
+ },
+ "E7|SET only, P16: fsync everysec|final": {
+  "n": 6,
+  "rps_median": 584901.0,
+  "rps_min": 325852.0,
+  "rps_max": 1191358.0,
+  "rps_cv": 47.574168422107036,
+  "p50": 495.6,
+  "p95": 1212.4,
+  "p99": 2392.05,
+  "cpu_cores": 3.6542188852702306
+ },
+ "E7|SET only, P16: fsync no|step2_fast_crc": {
+  "n": 6,
+  "rps_median": 922054.0,
+  "rps_min": 620304.0,
+  "rps_max": 1166784.0,
+  "rps_cv": 21.19555547989732,
+  "p50": 507.9,
+  "p95": 1179.65,
+  "p99": 2015.25,
+  "cpu_cores": 2.96961474597174
+ },
+ "E7|SET only, P1: fsync always|step1_deferred_ack": {
+  "n": 6,
+  "rps_median": 3187.55,
+  "rps_min": 2471.6,
+  "rps_max": 3622.1,
+  "rps_cv": 15.871735893480626,
+  "p50": 12320.75,
+  "p95": 44040.2,
+  "p99": 50331.649999999994,
+  "cpu_cores": 0.11030762167125804
+ },
+ "E7|SET only, P16: fsync always|final": {
+  "n": 6,
+  "rps_median": 49190.0,
+  "rps_min": 34438.0,
+  "rps_max": 69020.0,
+  "rps_cv": 28.006934196634013,
+  "p50": 12582.900000000001,
+  "p95": 45613.05,
+  "p99": 51904.5,
+  "cpu_cores": 0.22187391152908398
+ },
+ "E7|SET only, P1: fsync always|step2_fast_crc": {
+  "n": 6,
+  "rps_median": 3370.3999999999996,
+  "rps_min": 2901.8,
+  "rps_max": 4417.1,
+  "rps_cv": 15.299395436570748,
+  "p50": 12845.1,
+  "p95": 23593.0,
+  "p99": 39321.6,
+  "cpu_cores": 0.12824759517598827
+ },
+ "E7|SET only, P16: no persistence|baseline": {
+  "n": 6,
+  "rps_median": 2140894.0,
+  "rps_min": 1222770.0,
+  "rps_max": 2299372.0,
+  "rps_cv": 22.342607201959293,
+  "p50": 331.8,
+  "p95": 679.95,
+  "p99": 860.15,
+  "cpu_cores": 3.830178759200841
+ }
+}

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="246" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1020" height="246" fill="white"/>
+<text x="10" y="22" font-size="15" font-weight="bold">E4 Concurrency design: throughput</text>
+<text x="322" y="56" text-anchor="end">single (1 thread, no locks)</text>
+<rect x="330" y="43" width="101.4" height="18" fill="#4c78a8"/>
+<line x1="414.2" y1="53.0" x2="431.9" y2="53.0" stroke="#222" stroke-width="1.5"/>
+<line x1="414.2" y1="48.0" x2="414.2" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<line x1="431.9" y1="48.0" x2="431.9" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<text x="439.9" y="56">535.1k/s</text>
+<text x="322" y="82" text-anchor="end">global mutex, 4 workers</text>
+<rect x="330" y="69" width="105.7" height="18" fill="#4c78a8"/>
+<line x1="429.6" y1="79.0" x2="445.3" y2="79.0" stroke="#222" stroke-width="1.5"/>
+<line x1="429.6" y1="74.0" x2="429.6" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<line x1="445.3" y1="74.0" x2="445.3" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<text x="453.3" y="82">557.9k/s</text>
+<text x="322" y="108" text-anchor="end">sharded, 4 workers</text>
+<rect x="330" y="95" width="371.8" height="18" fill="#4c78a8"/>
+<line x1="688.6" y1="105.0" x2="763.8" y2="105.0" stroke="#222" stroke-width="1.5"/>
+<line x1="688.6" y1="100.0" x2="688.6" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<line x1="763.8" y1="100.0" x2="763.8" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<text x="771.8" y="108">1,961.8k/s</text>
+<text x="322" y="134" text-anchor="end">sharded, 1 worker</text>
+<rect x="330" y="121" width="91.2" height="18" fill="#4c78a8"/>
+<line x1="405.7" y1="131.0" x2="424.1" y2="131.0" stroke="#222" stroke-width="1.5"/>
+<line x1="405.7" y1="126.0" x2="405.7" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<line x1="424.1" y1="126.0" x2="424.1" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<text x="432.1" y="134">481.3k/s</text>
+<text x="322" y="160" text-anchor="end">sharded, 8 workers</text>
+<rect x="330" y="147" width="534.1" height="18" fill="#4c78a8"/>
+<line x1="787.9" y1="157.0" x2="890.0" y2="157.0" stroke="#222" stroke-width="1.5"/>
+<line x1="787.9" y1="152.0" x2="787.9" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<line x1="890.0" y1="152.0" x2="890.0" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<text x="898.0" y="160">2,818.2k/s</text>
+<text x="322" y="186" text-anchor="end">sharded, 2 workers</text>
+<rect x="330" y="173" width="187.7" height="18" fill="#4c78a8"/>
+<line x1="484.0" y1="183.0" x2="541.5" y2="183.0" stroke="#222" stroke-width="1.5"/>
+<line x1="484.0" y1="178.0" x2="484.0" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<line x1="541.5" y1="178.0" x2="541.5" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<text x="549.5" y="186">990.1k/s</text>
+<text x="330" y="220" fill="#555">requests per second (bar = median, whisker = min..max over all runs)</text>
+</svg>

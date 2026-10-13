@@ -47,4 +47,5 @@ private:
     std::atomic<bool> running_{false};
     std::thread acceptor_;
     std::vector<std::unique_ptr<Worker>> workers_;
+    std::vector<int> listener_ids_;  // durability listeners registered with opts_.hooks
 };

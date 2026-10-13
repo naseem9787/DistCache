@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="298" font-family="Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1020" height="298" fill="white"/>
+<text x="10" y="22" font-size="15" font-weight="bold">E1 Workload mix: throughput</text>
+<text x="322" y="56" text-anchor="end">50% GET, P1</text>
+<rect x="330" y="43" width="97.7" height="18" fill="#4c78a8"/>
+<line x1="422.6" y1="53.0" x2="438.1" y2="53.0" stroke="#222" stroke-width="1.5"/>
+<line x1="422.6" y1="48.0" x2="422.6" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<line x1="438.1" y1="48.0" x2="438.1" y2="58.0" stroke="#222" stroke-width="1.5"/>
+<text x="446.1" y="56">382.9k/s</text>
+<text x="322" y="82" text-anchor="end">GET only, P1</text>
+<rect x="330" y="69" width="90.7" height="18" fill="#4c78a8"/>
+<line x1="373.5" y1="79.0" x2="442.3" y2="79.0" stroke="#222" stroke-width="1.5"/>
+<line x1="373.5" y1="74.0" x2="373.5" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<line x1="442.3" y1="74.0" x2="442.3" y2="84.0" stroke="#222" stroke-width="1.5"/>
+<text x="450.3" y="82">355.5k/s</text>
+<text x="322" y="108" text-anchor="end">80% GET, P16</text>
+<rect x="330" y="95" width="465.0" height="18" fill="#f58518"/>
+<line x1="729.5" y1="105.0" x2="849.4" y2="105.0" stroke="#222" stroke-width="1.5"/>
+<line x1="729.5" y1="100.0" x2="729.5" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<line x1="849.4" y1="100.0" x2="849.4" y2="110.0" stroke="#222" stroke-width="1.5"/>
+<text x="857.4" y="108">1,822.4k/s</text>
+<text x="322" y="134" text-anchor="end">SET only, P1</text>
+<rect x="330" y="121" width="101.3" height="18" fill="#4c78a8"/>
+<line x1="431.2" y1="131.0" x2="441.1" y2="131.0" stroke="#222" stroke-width="1.5"/>
+<line x1="431.2" y1="126.0" x2="431.2" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<line x1="441.1" y1="126.0" x2="441.1" y2="136.0" stroke="#222" stroke-width="1.5"/>
+<text x="449.1" y="134">397.0k/s</text>
+<text x="322" y="160" text-anchor="end">80% GET, P1</text>
+<rect x="330" y="147" width="103.7" height="18" fill="#4c78a8"/>
+<line x1="424.8" y1="157.0" x2="439.0" y2="157.0" stroke="#222" stroke-width="1.5"/>
+<line x1="424.8" y1="152.0" x2="424.8" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<line x1="439.0" y1="152.0" x2="439.0" y2="162.0" stroke="#222" stroke-width="1.5"/>
+<text x="447.0" y="160">406.5k/s</text>
+<text x="322" y="186" text-anchor="end">50% GET, P16</text>
+<rect x="330" y="173" width="523.6" height="18" fill="#f58518"/>
+<line x1="746.7" y1="183.0" x2="865.8" y2="183.0" stroke="#222" stroke-width="1.5"/>
+<line x1="746.7" y1="178.0" x2="746.7" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<line x1="865.8" y1="178.0" x2="865.8" y2="188.0" stroke="#222" stroke-width="1.5"/>
+<text x="873.8" y="186">2,052.4k/s</text>
+<text x="322" y="212" text-anchor="end">GET only, P16</text>
+<rect x="330" y="199" width="508.9" height="18" fill="#f58518"/>
+<line x1="697.2" y1="209.0" x2="890.0" y2="209.0" stroke="#222" stroke-width="1.5"/>
+<line x1="697.2" y1="204.0" x2="697.2" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<line x1="890.0" y1="204.0" x2="890.0" y2="214.0" stroke="#222" stroke-width="1.5"/>
+<text x="898.0" y="212">1,994.6k/s</text>
+<text x="322" y="238" text-anchor="end">SET only, P16</text>
+<rect x="330" y="225" width="519.0" height="18" fill="#f58518"/>
+<line x1="798.3" y1="235.0" x2="870.1" y2="235.0" stroke="#222" stroke-width="1.5"/>
+<line x1="798.3" y1="230.0" x2="798.3" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<line x1="870.1" y1="230.0" x2="870.1" y2="240.0" stroke="#222" stroke-width="1.5"/>
+<text x="878.1" y="238">2,034.4k/s</text>
+<text x="330" y="272" fill="#555">requests per second (bar = median, whisker = min..max over all runs)</text>
+</svg>

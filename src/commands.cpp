@@ -5,6 +5,7 @@
 #include <charconv>
 #include <optional>
 
+#include "diag.hpp"
 #include "resp.hpp"
 
 namespace {
@@ -113,7 +114,13 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
                          "\r\nmax_keys:" + std::to_string(store.max_keys()) +
                          "\r\nevicted_keys:" + std::to_string(store.evicted_keys()) +
                          "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n" +
-                         (hooks ? hooks->info() : std::string("# Persistence\r\nenabled:no\r\n")));
+                         (hooks ? hooks->info() : std::string("# Persistence\r\nenabled:no\r\n")) +
+#ifdef DISTCACHE_DIAGNOSTICS
+                         diag::report()
+#else
+                         std::string()
+#endif
+                         );
     }
     if (cmd == "SAVE") {
         if (args.size() != 1) return wrong_args("save");
