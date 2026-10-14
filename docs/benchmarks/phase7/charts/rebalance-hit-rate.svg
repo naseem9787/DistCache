@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 340" font-family="sans-serif" font-size="11">
+<rect width="760" height="340" fill="#fff"/>
+<text x="380.0" y="22" text-anchor="middle" font-size="14" font-weight="bold">Hit rate while a 4th node is added (GET-only, last run of each)</text>
+<line x1="60" y1="290" x2="740" y2="290" stroke="#ddd"/>
+<text x="54" y="294" text-anchor="end">0</text>
+<line x1="60" y1="240" x2="740" y2="240" stroke="#ddd"/>
+<text x="54" y="244" text-anchor="end">20</text>
+<line x1="60" y1="190" x2="740" y2="190" stroke="#ddd"/>
+<text x="54" y="194" text-anchor="end">40</text>
+<line x1="60" y1="140" x2="740" y2="140" stroke="#ddd"/>
+<text x="54" y="144" text-anchor="end">60</text>
+<line x1="60" y1="90" x2="740" y2="90" stroke="#ddd"/>
+<text x="54" y="94" text-anchor="end">80</text>
+<line x1="60" y1="40" x2="740" y2="40" stroke="#ddd"/>
+<text x="54" y="44" text-anchor="end">100</text>
+<path d="M60.0,40.0 L95.8,40.0 L131.6,40.0 L167.4,40.0 L203.2,40.0 L238.9,40.0 L274.7,100.6 L310.5,100.2 L346.3,100.4 L382.1,100.3 L417.9,100.4 L453.7,100.0 L489.5,100.4 L525.3,100.6 L561.1,100.2 L596.8,100.2 L632.6,99.9 L668.4,99.9 L704.2,100.1 L740.0,100.3" fill="none" stroke="#2a7fba" stroke-width="2"/>
+<rect x="70" y="318" width="12" height="12" fill="#2a7fba"/>
+<text x="88" y="328">RING ADD</text>
+<path d="M60.0,40.0 L95.8,40.0 L131.6,40.0 L167.4,40.0 L203.2,40.0 L238.9,40.0 L274.7,40.0 L310.5,40.0 L346.3,40.0 L382.1,40.0 L417.9,40.0 L453.7,40.0 L489.5,40.0 L525.3,40.0 L561.1,40.0 L596.8,40.0 L632.6,40.0 L668.4,40.0 L704.2,40.0 L740.0,40.0" fill="none" stroke="#d9822b" stroke-width="2"/>
+<rect x="260" y="318" width="12" height="12" fill="#d9822b"/>
+<text x="278" y="328">RING ADD MIGRATE</text>
+<text x="380.0" y="306" text-anchor="middle">seconds into the measured window</text>
+<text x="14" y="140" transform="rotate(-90 14 140)">hit rate %</text></svg>

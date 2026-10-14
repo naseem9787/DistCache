@@ -45,6 +45,17 @@ public:
         return read_reply();
     }
 
+    // For commands that answer with an array of bulk strings (KEYS). {"<closed>"} on failure.
+    std::vector<std::string> cmd_array(const std::vector<std::string>& args) {
+        send_raw(encode(args));
+        std::string line;
+        if (!read_line(line) || line.empty() || line[0] != '*') return {"<closed>"};
+        const long n = std::stol(line.substr(1));
+        std::vector<std::string> out;
+        for (long i = 0; i < n; ++i) out.push_back(read_reply());
+        return out;
+    }
+
     std::string read_reply() {
         std::string line;
         if (!read_line(line) || line.empty()) return "<closed>";

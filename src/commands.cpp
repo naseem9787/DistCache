@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "diag.hpp"
+#include "glob.hpp"
 #include "resp.hpp"
 
 namespace {
@@ -106,6 +107,19 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
     }
     if (cmd == "DBSIZE") {
         return resp_integer(static_cast<long long>(store.size()));
+    }
+    if (cmd == "KEYS") {
+        // O(number of keys) and it builds the whole reply in memory: an administrative command
+        // (the router uses it to find the keys to migrate), not something for the request path.
+        // The engine copies one shard at a time, so it never holds more than one shard's lock.
+        if (args.size() != 2) return wrong_args("keys");
+        std::vector<std::string> keys;
+        store.for_each([&](const std::string& k, const std::string&, int64_t) {
+            if (glob_match(args[1], k)) keys.push_back(k);
+        });
+        std::string out = "*" + std::to_string(keys.size()) + "\r\n";
+        for (const auto& k : keys) out += resp_bulk(k);
+        return out;
     }
     if (cmd == "INFO") {
         return resp_bulk(std::string("# Concurrency\r\nmode:") + store.mode() +

@@ -1,0 +1,20 @@
+# distcache_tests (185 tests: 155 from Phases 1-6 + 30 new in Phase 7), 2026-10-14T04:04:16Z
+# base commit 12d938b + working tree; build/distcache sha256 prefix 7a62f8c5007186a9
+
+## plain: Release -O3 -DNDEBUG (no sanitizer)
+[==========] 185 tests from 26 test suites ran. (28791 ms total)
+[  PASSED  ] 184 tests.
+[  SKIPPED ] 1 test, listed below:
+sanitizer reports in the output: 0
+
+## asan: RelWithDebInfo -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined
+[==========] 185 tests from 26 test suites ran. (26592 ms total)
+[  PASSED  ] 184 tests.
+[  SKIPPED ] 1 test, listed below:
+sanitizer reports in the output: 0
+
+## tsan: RelWithDebInfo -fsanitize=thread -fno-omit-frame-pointer
+[==========] 185 tests from 26 test suites ran. (26556 ms total)
+[  PASSED  ] 184 tests.
+[  SKIPPED ] 1 test, listed below:
+sanitizer reports in the output: 0

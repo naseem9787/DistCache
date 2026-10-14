@@ -1,0 +1,50 @@
+# 3 nodes behind the router. Load 3000 keys through the router:
+$ redis-cli -p 7700 DBSIZE
+3000
+
+# where do keys live? (each node's own DBSIZE, bypassing the router)
+node 1: 1023
+node 2: 990
+node 3: 987
+
+$ redis-cli -p 7700 RING LOOKUP key:42
+a
+$ redis-cli -p 7700 GET key:42
+value-42
+
+# hash tags keep related keys together:
+$ redis-cli -p 7700 RING LOOKUP {user:7}:profile
+a
+$ redis-cli -p 7700 RING LOOKUP {user:7}:cart
+a
+
+# add a 4th node WITHOUT migration: about a quarter of the keys now miss
+$ redis-cli -p 7700 RING ADD d 127.0.0.1 7704
+OK
+keys that now miss: 690 of 3000
+
+# remove it again, then add it WITH migration: every key stays reachable
+$ redis-cli -p 7700 RING REMOVE d
+OK
+$ redis-cli -p 7700 RING ADD d 127.0.0.1 7704 MIGRATE
+OK scanned=3000 moved=690 superseded=0 vanished=0 errors=0
+keys that miss: 0 of 3000
+node 1: 757
+node 2: 789
+node 3: 764
+node 4: 690
+
+$ redis-cli -p 7700 RING INFO
+# Router
+ring_version:5
+migrating:no
+vnodes_per_weight:160
+ring_points:640
+nodes:4
+forwarded_commands:9004
+backend_errors:0
+node:a addr=127.0.0.1:7701 weight=1 share=0.2441
+node:b addr=127.0.0.1:7702 weight=1 share=0.2624
+node:c addr=127.0.0.1:7703 weight=1 share=0.2622
+node:d addr=127.0.0.1:7704 weight=1 share=0.2313
+

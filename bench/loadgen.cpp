@@ -39,9 +39,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "hash.hpp"
+#include "hash_ring.hpp"
 
 namespace {
 
@@ -52,9 +56,20 @@ uint64_t now_ns() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
 }
 
+// One server the clients talk to. With --nodes there are several and the CLIENT picks the node
+// for every key with the consistent hash ring ("smart client"); without it there is one.
+struct Target {
+    std::string name;
+    std::string host;
+    int port = 0;
+};
+
 struct Options {
     std::string host = "127.0.0.1";
     int port = 6380;
+    std::string nodes;            // "a=127.0.0.1:7001,b=127.0.0.1:7002": smart-client mode
+    uint32_t vnodes = HashRing::kDefaultVnodes;
+    std::vector<Target> targets;  // filled in by main()
     int clients = 50;
     int threads = 4;
     int pipeline = 1;
@@ -177,30 +192,41 @@ void append_bulk(std::string& out, const std::string& s) {
 
 // ---- one connection --------------------------------------------------------------
 
-struct Conn {
+// The connection from one logical client to one server.
+struct NodeConn {
     int fd = -1;
-    std::string out;         // batch being sent
+    std::string out;         // this node's share of the batch being sent
     size_t sent = 0;
     std::string in;          // unparsed reply bytes
-    std::vector<uint8_t> kinds;  // 1 = GET, 0 = SET, per request in the batch
+    std::vector<uint8_t> kinds;  // 1 = GET, 0 = SET, per request sent to this node in the batch
     size_t received = 0;     // replies parsed in the current batch
+};
+
+// One logical client: a connection to every target (exactly one in the normal mode). Each batch
+// of `pipeline` commands is split by node; the client is closed-loop on the WHOLE batch: the
+// next batch starts when the last reply of the slowest node has arrived.
+struct Conn {
+    std::vector<NodeConn> nc;
+    size_t outstanding = 0;  // replies still missing from the current batch
     uint64_t batch_start = 0;
+    bool dead = false;
 };
 
 struct ThreadResult {
     Histogram lat;
     uint64_t gets = 0, sets = 0, hits = 0, misses = 0, errors = 0, protocol_errors = 0, requests = 0;
     std::vector<uint64_t> per_second;
+    std::vector<uint64_t> per_second_miss;  // GET misses per second (hit rate over time)
     uint64_t connect_failures = 0;
 };
 
-int connect_to(const Options& o) {
+int connect_to(const Target& t) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
     sockaddr_in a{};
     a.sin_family = AF_INET;
-    a.sin_port = htons(static_cast<uint16_t>(o.port));
-    inet_pton(AF_INET, o.host.c_str(), &a.sin_addr);
+    a.sin_port = htons(static_cast<uint16_t>(t.port));
+    inet_pton(AF_INET, t.host.c_str(), &a.sin_addr);
     if (connect(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0) { close(fd); return -1; }
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
@@ -244,7 +270,7 @@ bool write_all(int fd, const std::string& s) {
     return true;
 }
 
-std::map<std::string, std::string> server_info(const Options& o) {
+std::map<std::string, std::string> server_info(const Target& o) {
     std::map<std::string, std::string> m;
     int fd = connect_to(o);
     if (fd < 0) return m;
@@ -264,95 +290,136 @@ std::map<std::string, std::string> server_info(const Options& o) {
     return m;
 }
 
-bool preload_keys(const Options& o, const std::string& value) {
-    int fd = connect_to(o);
-    if (fd < 0) return false;
+// Which target owns a key: always 0 with one target, else the consistent hash ring decides.
+size_t target_of(const HashRing* ring, const std::string& key) {
+    if (!ring) return 0;
+    const int i = ring->owner_index(key_hash(key));
+    return static_cast<size_t>(i < 0 ? 0 : i);
+}
+
+// The ring is built from the targets' names; ring node index i is the i-th name in sorted order,
+// so targets are kept in that same order (see main()).
+bool preload_keys(const Options& o, const HashRing* ring, const std::string& value) {
     const uint64_t kBatch = 256;
-    std::string buf;
-    for (uint64_t base = 0; base < o.keyspace; base += kBatch) {
-        uint64_t cnt = std::min(kBatch, o.keyspace - base);
-        std::string out;
-        for (uint64_t i = 0; i < cnt; ++i) {
+    for (size_t t = 0; t < o.targets.size(); ++t) {
+        int fd = connect_to(o.targets[t]);
+        if (fd < 0) return false;
+        std::string buf, out;
+        uint64_t pending = 0;
+        auto flush = [&]() -> bool {
+            if (!pending) return true;
+            if (!write_all(fd, out)) return false;
+            for (uint64_t i = 0; i < pending; ++i)
+                if (!blocking_reply(fd, buf, nullptr)) return false;
+            out.clear();
+            pending = 0;
+            return true;
+        };
+        for (uint64_t k = 0; k < o.keyspace; ++k) {
+            const std::string key = key_name(k);
+            if (target_of(ring, key) != t) continue;
             out += "*3\r\n$3\r\nSET\r\n";
-            append_bulk(out, key_name(base + i));
+            append_bulk(out, key);
             append_bulk(out, value);
+            if (++pending == kBatch && !flush()) { close(fd); return false; }
         }
-        if (!write_all(fd, out)) { close(fd); return false; }
-        for (uint64_t i = 0; i < cnt; ++i)
-            if (!blocking_reply(fd, buf, nullptr)) { close(fd); return false; }
+        const bool ok = flush();
+        close(fd);
+        if (!ok) return false;
     }
-    close(fd);
     return true;
 }
 
-void run_thread(const Options& o, const KeyDist& dist, const std::string& value, int nconns, int tid,
-                uint64_t measure_start, uint64_t end, ThreadResult* res) {
+void run_thread(const Options& o, const HashRing* ring, const KeyDist& dist, const std::string& value, int nconns,
+                int tid, uint64_t measure_start, uint64_t end, ThreadResult* res) {
     int ep = epoll_create1(0);
     std::vector<Conn> conns(static_cast<size_t>(nconns));
+    const size_t ntargets = o.targets.size();
     Rng rng(o.seed * 1000003ULL + static_cast<uint64_t>(tid) + 1);
     const size_t seconds = static_cast<size_t>(std::ceil(o.duration)) + 2;
     res->per_second.assign(seconds, 0);
+    res->per_second_miss.assign(seconds, 0);
+
+    // epoll tag of (client index, node index): at most 64 nodes
+    auto tag = [](size_t ci, size_t ni) { return static_cast<uint64_t>(ci * 64 + ni); };
 
     auto build_batch = [&](Conn& c) {
-        c.out.clear();
-        c.sent = 0;
-        c.kinds.clear();
-        c.received = 0;
+        for (auto& n : c.nc) {
+            n.out.clear();
+            n.sent = 0;
+            n.kinds.clear();
+            n.received = 0;
+        }
+        c.outstanding = static_cast<size_t>(o.pipeline);
         for (int i = 0; i < o.pipeline; ++i) {
             bool is_get = rng.uniform01() < o.get_ratio;
             std::string key = key_name(dist.pick(rng));
+            NodeConn& n = c.nc[target_of(ring, key)];  // the ring picks the node (one target: always 0)
             if (is_get) {
-                c.out += "*2\r\n$3\r\nGET\r\n";
-                append_bulk(c.out, key);
+                n.out += "*2\r\n$3\r\nGET\r\n";
+                append_bulk(n.out, key);
             } else if (o.ttl_ms > 0) {
-                c.out += "*5\r\n$3\r\nSET\r\n";
-                append_bulk(c.out, key);
-                append_bulk(c.out, value);
-                append_bulk(c.out, "PX");
-                append_bulk(c.out, std::to_string(o.ttl_ms));
+                n.out += "*5\r\n$3\r\nSET\r\n";
+                append_bulk(n.out, key);
+                append_bulk(n.out, value);
+                append_bulk(n.out, "PX");
+                append_bulk(n.out, std::to_string(o.ttl_ms));
             } else {
-                c.out += "*3\r\n$3\r\nSET\r\n";
-                append_bulk(c.out, key);
-                append_bulk(c.out, value);
+                n.out += "*3\r\n$3\r\nSET\r\n";
+                append_bulk(n.out, key);
+                append_bulk(n.out, value);
             }
-            c.kinds.push_back(is_get ? 1 : 0);
+            n.kinds.push_back(is_get ? 1 : 0);
         }
         c.batch_start = now_ns();
     };
-    auto try_send = [&](Conn& c, size_t idx) -> bool {
-        while (c.sent < c.out.size()) {
-            ssize_t n = write(c.fd, c.out.data() + c.sent, c.out.size() - c.sent);
-            if (n > 0) { c.sent += static_cast<size_t>(n); continue; }
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    auto try_send = [&](Conn& c, size_t ci, size_t ni) -> bool {
+        NodeConn& n = c.nc[ni];
+        if (n.out.empty()) return true;  // nothing of this batch goes to this node
+        while (n.sent < n.out.size()) {
+            ssize_t w = write(n.fd, n.out.data() + n.sent, n.out.size() - n.sent);
+            if (w > 0) { n.sent += static_cast<size_t>(w); continue; }
+            if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                 epoll_event ev{};
                 ev.events = EPOLLIN | EPOLLOUT;
-                ev.data.u64 = idx;
-                epoll_ctl(ep, EPOLL_CTL_MOD, c.fd, &ev);
+                ev.data.u64 = tag(ci, ni);
+                epoll_ctl(ep, EPOLL_CTL_MOD, n.fd, &ev);
                 return true;
             }
             return false;
         }
         epoll_event ev{};
         ev.events = EPOLLIN;
-        ev.data.u64 = idx;
-        epoll_ctl(ep, EPOLL_CTL_MOD, c.fd, &ev);
+        ev.data.u64 = tag(ci, ni);
+        epoll_ctl(ep, EPOLL_CTL_MOD, n.fd, &ev);
         return true;
+    };
+    auto kill = [&](Conn& c) {
+        c.dead = true;
+        for (auto& n : c.nc) if (n.fd >= 0) { close(n.fd); n.fd = -1; }
     };
 
     for (size_t i = 0; i < conns.size(); ++i) {
         Conn& c = conns[i];
-        c.fd = connect_to(o);
-        if (c.fd < 0) { res->connect_failures++; continue; }
-        fcntl(c.fd, F_SETFL, fcntl(c.fd, F_GETFL, 0) | O_NONBLOCK);
-        epoll_event ev{};
-        ev.events = EPOLLIN;
-        ev.data.u64 = i;
-        epoll_ctl(ep, EPOLL_CTL_ADD, c.fd, &ev);
+        c.nc.resize(ntargets);
+        for (size_t t = 0; t < ntargets; ++t) {
+            NodeConn& n = c.nc[t];
+            n.fd = connect_to(o.targets[t]);
+            if (n.fd < 0) { res->connect_failures++; c.dead = true; continue; }
+            fcntl(n.fd, F_SETFL, fcntl(n.fd, F_GETFL, 0) | O_NONBLOCK);
+            epoll_event ev{};
+            ev.events = EPOLLIN;
+            ev.data.u64 = tag(i, t);
+            epoll_ctl(ep, EPOLL_CTL_ADD, n.fd, &ev);
+        }
+        if (c.dead) kill(c);
     }
     for (size_t i = 0; i < conns.size(); ++i) {
-        if (conns[i].fd < 0) continue;
-        build_batch(conns[i]);
-        try_send(conns[i], i);
+        Conn& c = conns[i];
+        if (c.dead) continue;
+        build_batch(c);
+        for (size_t t = 0; t < ntargets && !c.dead; ++t)
+            if (!try_send(c, i, t)) kill(c);
     }
 
     epoll_event events[64];
@@ -360,35 +427,38 @@ void run_thread(const Options& o, const KeyDist& dist, const std::string& value,
     while (true) {
         uint64_t t = now_ns();
         if (t >= end) break;
-        int n = epoll_wait(ep, events, 64, 50);
+        int ne = epoll_wait(ep, events, 64, 50);
         t = now_ns();
-        for (int e = 0; e < n; ++e) {
-            size_t idx = static_cast<size_t>(events[e].data.u64);
-            Conn& c = conns[idx];
-            if (c.fd < 0) continue;
-            if (events[e].events & EPOLLOUT) try_send(c, idx);
+        for (int e = 0; e < ne; ++e) {
+            const uint64_t tg = events[e].data.u64;
+            const size_t ci = static_cast<size_t>(tg / 64), ni = static_cast<size_t>(tg % 64);
+            Conn& c = conns[ci];
+            if (c.dead) continue;
+            NodeConn& n = c.nc[ni];
+            if (n.fd < 0) continue;
+            if (events[e].events & EPOLLOUT) try_send(c, ci, ni);
             if (!(events[e].events & EPOLLIN)) continue;
             for (;;) {
-                ssize_t r = read(c.fd, buf, sizeof buf);
-                if (r > 0) { c.in.append(buf, static_cast<size_t>(r)); continue; }
-                if (r == 0) { close(c.fd); c.fd = -1; break; }
+                ssize_t r = read(n.fd, buf, sizeof buf);
+                if (r > 0) { n.in.append(buf, static_cast<size_t>(r)); continue; }
+                if (r == 0) { kill(c); break; }
                 break;  // EAGAIN
             }
-            if (c.fd < 0) continue;
+            if (c.dead) continue;
             // parse as many complete replies as are buffered
             size_t pos = 0;
-            while (pos < c.in.size() && c.received < c.kinds.size()) {
-                char type = c.in[pos];
-                size_t eol = c.in.find("\r\n", pos);
+            while (pos < n.in.size() && n.received < n.kinds.size()) {
+                char type = n.in[pos];
+                size_t eol = n.in.find("\r\n", pos);
                 if (eol == std::string::npos) break;
                 size_t next;
                 bool nil = false, error = false;
                 if (type == '$') {
-                    long len = std::strtol(c.in.c_str() + pos + 1, nullptr, 10);
+                    long len = std::strtol(n.in.c_str() + pos + 1, nullptr, 10);
                     if (len < 0) { nil = true; next = eol + 2; }
                     else {
                         next = eol + 2 + static_cast<size_t>(len) + 2;
-                        if (next > c.in.size()) break;
+                        if (next > n.in.size()) break;
                     }
                 } else if (type == '+' || type == ':') {
                     next = eol + 2;
@@ -397,29 +467,34 @@ void run_thread(const Options& o, const KeyDist& dist, const std::string& value,
                     next = eol + 2;
                 } else {
                     res->protocol_errors++;
-                    next = c.in.size();
+                    next = n.in.size();
                 }
                 pos = next;
-                const bool is_get = c.kinds[c.received] != 0;
-                c.received++;
+                const bool is_get = n.kinds[n.received] != 0;
+                n.received++;
+                if (c.outstanding > 0) c.outstanding--;
                 if (t >= measure_start) {
                     res->lat.record(t - c.batch_start);
                     res->requests++;
                     size_t sec = static_cast<size_t>((t - measure_start) / 1000000000ULL);
-                    if (sec < res->per_second.size()) res->per_second[sec]++;
+                    if (sec < res->per_second.size()) {
+                        res->per_second[sec]++;
+                        if (is_get && nil) res->per_second_miss[sec]++;
+                    }
                     if (is_get) { res->gets++; if (nil) res->misses++; else res->hits++; }
                     else res->sets++;
                     if (error) res->errors++;
                 }
             }
-            if (pos > 0) c.in.erase(0, pos);
-            if (c.received == c.kinds.size() && c.fd >= 0) {  // batch complete: closed loop
+            if (pos > 0) n.in.erase(0, pos);
+            if (c.outstanding == 0 && !c.dead) {  // whole batch answered: closed loop
                 build_batch(c);
-                if (!try_send(c, idx)) { close(c.fd); c.fd = -1; }
+                for (size_t t2 = 0; t2 < ntargets && !c.dead; ++t2)
+                    if (!try_send(c, ci, t2)) kill(c);
             }
         }
     }
-    for (auto& c : conns) if (c.fd >= 0) close(c.fd);
+    for (auto& c : conns) kill(c);
     close(ep);
 }
 
@@ -437,6 +512,8 @@ void usage() {
     std::puts(
         "distcache_loadgen [options]   closed-loop, duration-based load generator (prints one JSON line)\n"
         "  --host H --port P        target (default 127.0.0.1:6380)\n"
+        "  --nodes N=H:P,N=H:P,...  smart-client mode: route every key with the consistent hash ring\n"
+        "                           over these nodes (instead of --host/--port); --vnodes V (default 160)\n"
         "  --clients N              connections (default 50)\n"
         "  --threads N              client threads (default 4, capped at --clients)\n"
         "  --pipeline N             commands per batch per connection (default 1)\n"
@@ -462,6 +539,8 @@ int main(int argc, char** argv) {
         };
         if (a == "--host") o.host = next();
         else if (a == "--port") o.port = std::atoi(next());
+        else if (a == "--nodes") o.nodes = next();
+        else if (a == "--vnodes") o.vnodes = static_cast<uint32_t>(std::max(1, std::atoi(next())));
         else if (a == "--clients") o.clients = std::atoi(next());
         else if (a == "--threads") o.threads = std::atoi(next());
         else if (a == "--pipeline") o.pipeline = std::atoi(next());
@@ -486,9 +565,62 @@ int main(int argc, char** argv) {
     KeyDist dist;
     dist.init(o);
 
-    if (o.preload && !preload_keys(o, value)) { std::fprintf(stderr, "preload failed (server down?)\n"); return 1; }
-    auto info_before = server_info(o);
-    if (info_before.empty()) { std::fprintf(stderr, "cannot reach server at %s:%d\n", o.host.c_str(), o.port); return 1; }
+    // Targets: --nodes gives several (smart client), otherwise the single --host/--port.
+    std::unique_ptr<HashRing> ring;
+    if (o.nodes.empty()) {
+        o.targets.push_back({"node", o.host, o.port});
+    } else {
+        size_t pos = 0;
+        while (pos <= o.nodes.size()) {
+            size_t comma = o.nodes.find(',', pos);
+            if (comma == std::string::npos) comma = o.nodes.size();
+            const std::string spec = o.nodes.substr(pos, comma - pos);
+            pos = comma + 1;
+            if (spec.empty()) continue;
+            const size_t eq = spec.find('='), colon = spec.rfind(':');
+            if (eq == std::string::npos || colon == std::string::npos || colon < eq) {
+                std::fprintf(stderr, "bad --nodes entry '%s' (want NAME=HOST:PORT)\n", spec.c_str());
+                return 2;
+            }
+            Target t;
+            t.name = spec.substr(0, eq);
+            t.host = spec.substr(eq + 1, colon - eq - 1);
+            t.port = std::atoi(spec.c_str() + colon + 1);
+            o.targets.push_back(t);
+        }
+        if (o.targets.empty() || o.targets.size() > 64) { std::fprintf(stderr, "need 1..64 nodes\n"); return 2; }
+        // ring node i == i-th name in sorted order: keep the targets in that order
+        std::sort(o.targets.begin(), o.targets.end(), [](const Target& a, const Target& b) { return a.name < b.name; });
+        for (size_t i = 1; i < o.targets.size(); ++i)
+            if (o.targets[i].name == o.targets[i - 1].name) { std::fprintf(stderr, "duplicate node name\n"); return 2; }
+        std::vector<HashRing::Node> rn;
+        for (const auto& t : o.targets) rn.push_back({t.name, 1});
+        ring = std::make_unique<HashRing>(std::move(rn), o.vnodes);
+    }
+
+    if (o.preload && !preload_keys(o, ring.get(), value)) { std::fprintf(stderr, "preload failed (server down?)\n"); return 1; }
+    // Server statistics: one target as before; several targets are summed (counters) so the
+    // JSON keeps the same shape, plus a per-node key count to show the distribution.
+    auto gather_info = [&](std::string* per_node) {
+        std::map<std::string, std::string> merged;
+        bool first = true;
+        for (const auto& t : o.targets) {
+            auto m = server_info(t);
+            if (per_node) {
+                if (!per_node->empty()) *per_node += ",";
+                *per_node += t.name + "=" + (m.count("keys") ? m["keys"] : std::string("?"));
+            }
+            if (first) { merged = m; first = false; continue; }
+            for (const char* k : {"keys", "evicted_keys", "expired_keys", "wal_records", "wal_fsyncs"}) {
+                if (m.count(k) && merged.count(k))
+                    merged[k] = std::to_string(std::atoll(merged[k].c_str()) + std::atoll(m[k].c_str()));
+            }
+        }
+        return merged;
+    };
+    std::string node_keys_before, node_keys_after;
+    auto info_before = gather_info(&node_keys_before);
+    if (info_before.empty()) { std::fprintf(stderr, "cannot reach server(s)\n"); return 1; }
 
     const uint64_t t0 = now_ns();
     const uint64_t measure_start = t0 + static_cast<uint64_t>(o.warmup * 1e9);
@@ -498,31 +630,37 @@ int main(int argc, char** argv) {
     std::vector<std::thread> ts;
     for (int t = 0; t < o.threads; ++t) {
         int conns = o.clients / o.threads + (t < o.clients % o.threads ? 1 : 0);
-        ts.emplace_back(run_thread, std::cref(o), std::cref(dist), std::cref(value), conns, t, measure_start, end,
-                        &results[static_cast<size_t>(t)]);
+        ts.emplace_back(run_thread, std::cref(o), static_cast<const HashRing*>(ring.get()), std::cref(dist),
+                        std::cref(value), conns, t, measure_start, end, &results[static_cast<size_t>(t)]);
     }
     for (auto& th : ts) th.join();
 
     ThreadResult total;
     total.per_second.assign(results[0].per_second.size(), 0);
+    total.per_second_miss.assign(results[0].per_second.size(), 0);
     for (auto& r : results) {
         total.lat.merge(r.lat);
         total.gets += r.gets; total.sets += r.sets; total.hits += r.hits; total.misses += r.misses;
         total.errors += r.errors; total.protocol_errors += r.protocol_errors; total.requests += r.requests;
         total.connect_failures += r.connect_failures;
-        for (size_t i = 0; i < r.per_second.size(); ++i) total.per_second[i] += r.per_second[i];
+        for (size_t i = 0; i < r.per_second.size(); ++i) {
+            total.per_second[i] += r.per_second[i];
+            total.per_second_miss[i] += r.per_second_miss[i];
+        }
     }
-    auto info_after = server_info(o);
+    auto info_after = gather_info(&node_keys_after);
 
     const double rps = static_cast<double>(total.requests) / o.duration;
     const auto us = [&](uint64_t ns) { return static_cast<double>(ns) / 1000.0; };
     std::printf("{\"label\":\"%s\",\"config\":{\"host\":\"%s\",\"port\":%d,\"clients\":%d,\"threads\":%d,"
                 "\"pipeline\":%d,\"duration_s\":%.2f,\"warmup_s\":%.2f,\"keyspace\":%llu,\"value_size\":%d,"
-                "\"get_ratio\":%.3f,\"ttl_ms\":%lld,\"key_dist\":\"%s\",\"preload\":%s,\"seed\":%llu},",
+                "\"get_ratio\":%.3f,\"ttl_ms\":%lld,\"key_dist\":\"%s\",\"preload\":%s,\"seed\":%llu,"
+                "\"nodes\":\"%s\",\"vnodes\":%u},",
                 json_escape(o.label).c_str(), o.host.c_str(), o.port, o.clients, o.threads, o.pipeline, o.duration,
                 o.warmup, static_cast<unsigned long long>(o.keyspace), o.value_size, o.get_ratio,
                 static_cast<long long>(o.ttl_ms), o.key_dist.c_str(), o.preload ? "true" : "false",
-                static_cast<unsigned long long>(o.seed));
+                static_cast<unsigned long long>(o.seed), json_escape(o.nodes).c_str(),
+                static_cast<unsigned>(o.vnodes));
     std::printf("\"result\":{\"requests\":%llu,\"gets\":%llu,\"sets\":%llu,\"hits\":%llu,\"misses\":%llu,"
                 "\"errors\":%llu,\"protocol_errors\":%llu,\"connect_failures\":%llu,\"rps\":%.1f,",
                 static_cast<unsigned long long>(total.requests), static_cast<unsigned long long>(total.gets),
@@ -539,6 +677,9 @@ int main(int argc, char** argv) {
     const size_t secs = static_cast<size_t>(std::ceil(o.duration));
     for (size_t i = 0; i < secs && i < total.per_second.size(); ++i)
         std::printf("%s%llu", i ? "," : "", static_cast<unsigned long long>(total.per_second[i]));
+    std::printf("],\"per_second_misses\":[");
+    for (size_t i = 0; i < secs && i < total.per_second_miss.size(); ++i)
+        std::printf("%s%llu", i ? "," : "", static_cast<unsigned long long>(total.per_second_miss[i]));
     std::printf("]},\"server\":{");
     bool first = true;
     for (const char* k : {"mode", "shards", "keys", "max_keys", "evicted_keys", "expired_keys", "fsync", "wal_fsyncs",
@@ -549,6 +690,10 @@ int main(int argc, char** argv) {
         first = false;
         if (b != info_before.end() && b->second != a->second)
             std::printf(",\"%s_before\":\"%s\"", k, json_escape(b->second).c_str());
+    }
+    if (o.targets.size() > 1) {
+        std::printf("%s\"node_keys\":\"%s\"", first ? "" : ",", json_escape(node_keys_after).c_str());
+        first = false;
     }
     for (const auto& kv : info_after) {  // diagnostics build: every diag_* counter, verbatim
         if (kv.first.compare(0, 5, "diag_") != 0) continue;

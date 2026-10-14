@@ -26,6 +26,9 @@ Compare configurations *within* a session; the harness interleaves binaries for 
 | `recovery2`, `report-*` | recovery times, 5 repeats | healthy |
 | `equiv`, `report-equiv` | `build/distcache_baseline` vs a pure Phase 5 build (`scripts/build_baseline.sh`): equivalent within noise | healthy |
 | `always-d`, `report-always-d` | same-session `fsync always`, final vs Phase 5 build | healthy |
+| `ring` | `bench_ring` output (balance, movement, cost of the consistent hash ring; Phase 7) | n/a (deterministic except timings) |
+| `cluster` | Phase 7 scale-out (1-3 nodes x direct / smart client / router x pipeline 1, 16, 64) and rebalance (add a node with and without migration), 5 repeats | healthy at the start; the probe drifted slower during the session (CRC 34 -> 40 ns, tmpfs 5.2 -> 2.6 GB/s) |
+| `cluster-check` | node-1 vs router-1 at pipeline 16, 8 repeats | **degraded** (CRC 65 ns at the end, CV 32-36 %): kept, only the direction is quoted |
 
 The profiler dumps (`results/prof*/profiles/*.txt`, 2-3 MB each, raw addresses) are not
 committed; the symbolized summaries are in `docs/benchmarks/phase6/profiles/`.
