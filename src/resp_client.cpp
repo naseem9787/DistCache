@@ -84,6 +84,26 @@ bool RespConn::connect(const std::string& host, int port, int io_timeout_ms, std
     return true;
 }
 
+bool RespConn::adopt(int fd, int io_timeout_ms) {
+    close();
+    fd_ = fd;
+    int one = 1;
+    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+    set_timeouts(fd_, io_timeout_ms);
+    return true;
+}
+
+void RespConn::set_io_timeout(int ms) {
+    if (fd_ >= 0) set_timeouts(fd_, ms);
+}
+
+bool RespConn::has_pending_input() {
+    if (fd_ < 0) return false;
+    if (pos_ < buf_.size()) return true;
+    pollfd p{fd_, POLLIN, 0};
+    return ::poll(&p, 1, 0) > 0;
+}
+
 void RespConn::close() {
     if (fd_ >= 0) ::close(fd_);
     fd_ = -1;

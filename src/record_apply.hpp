@@ -3,6 +3,7 @@
 //
 // A logical record is the RESP command the observers emit for every state change:
 //     SET key value [PXAT unix_ms]    DEL key    PEXPIREAT key unix_ms    PERSIST key
+//     FLUSHALL            (a replica wiped itself before a full resynchronisation)
 // Absolute deadlines (PXAT / PEXPIREAT) make every record idempotent and independent of when it
 // is applied: replaying it later, twice, or on another machine yields the same final state.
 //

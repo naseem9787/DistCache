@@ -86,6 +86,8 @@ public:
     }
 
     void set_observer(MutationObserver* o) override { store_.set_observer(o); }
+    void clear() override { std::lock_guard<std::mutex> g(mu_); store_.clear(); }
+    void set_eviction_enabled(bool e) override { std::lock_guard<std::mutex> g(mu_); store_.set_eviction_enabled(e); }
     void for_each(const EntryVisitor& visit) const override {
         std::vector<std::tuple<std::string, std::string, int64_t>> copy;  // copy under the lock...
         {
@@ -188,6 +190,12 @@ public:
 
     void set_observer(MutationObserver* o) override {
         for (auto& sh : shards_) sh->store.set_observer(o);  // every shard reports to the same observer
+    }
+    void clear() override {
+        for (auto& sh : shards_) { ShardGuard g(sh->mu); sh->store.clear(); }  // one shard lock at a time
+    }
+    void set_eviction_enabled(bool e) override {
+        for (auto& sh : shards_) { ShardGuard g(sh->mu); sh->store.set_eviction_enabled(e); }
     }
     void for_each(const EntryVisitor& visit) const override {
         for (const auto& sh : shards_) {  // one shard at a time: bounded copy, bounded lock hold

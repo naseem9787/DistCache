@@ -34,6 +34,9 @@ public:
     void on_persist(const std::string& key) override {
         for (auto* m : members_) m->on_persist(key);
     }
+    void on_flush() override {
+        for (auto* m : members_) m->on_flush();
+    }
 
 private:
     std::vector<MutationObserver*> members_;

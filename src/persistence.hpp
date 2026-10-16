@@ -79,6 +79,7 @@ public:
     void on_del(const std::string& key) override;
     void on_expire(const std::string& key, int64_t ttl_ms) override;
     void on_persist(const std::string& key) override;
+    void on_flush() override;
 
     // CommandHooks
     bool save(std::string* error) override { return snapshot(error); }

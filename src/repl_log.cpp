@@ -121,6 +121,13 @@ void ReplicationLog::on_persist(const std::string& key) {
     append_local(std::move(p));
 }
 
+void ReplicationLog::on_flush() {
+    std::string p;
+    put_header(p, 1);
+    put_bulk(p, "FLUSHALL");
+    append_local(std::move(p));
+}
+
 ReplicationLog::AppendStatus ReplicationLog::append_replicated(uint64_t offset, std::string payload) {
     std::lock_guard<std::mutex> lock(mu_);
     const uint64_t last = last_.load(std::memory_order_relaxed);

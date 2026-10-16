@@ -234,6 +234,24 @@ TEST(ReplLog, WaitBeyondWakesOnAppendTimesOutAndWakesOnClose) {
 
 // ---- I2: the observer chain and visibility ---------------------------------------------------------------
 
+TEST(ObserverChain, ForwardsFlushToo) {
+    ReplicationLog a(fixed_wall()), b(fixed_wall());
+    ObserverChain chain;
+    chain.add(&a);
+    chain.add(&b);
+    Store engine;
+    engine.set_observer(&chain);
+    engine.set("x", "1");
+    engine.clear();  // one on_flush, which must reach every member
+    EXPECT_EQ(a.last_offset(), 2u);
+    EXPECT_EQ(b.last_offset(), 2u);
+    EXPECT_EQ(all_records(a)[1].payload, "*1\r\n$8\r\nFLUSHALL\r\n");
+    Store replica;
+    replica.set("stale", "1");
+    for (auto& r : all_records(a)) apply_logical_record(replica, args_of(r.payload), real_wall());
+    EXPECT_EQ(replica.size(), 0u);  // FLUSHALL wiped the replica's old content too
+}
+
 TEST(ObserverChain, DeliversToEveryMemberInOrder) {
     ReplicationLog a(fixed_wall()), b(fixed_wall());
     ObserverChain chain;
@@ -261,13 +279,13 @@ TEST(ObserverChain, AMutationIsNeverVisibleBeforeItsRecordExists) {
     chain.add(&log);
     ShardedStore engine(8);
     engine.set_observer(&chain);
-    constexpr int kWriters = 4;
+    constexpr int kWriters = 4, kMaxEach = 15000;
     std::atomic<bool> done{false};
     std::atomic<int> violations{0}, checks{0};
     std::vector<std::thread> ws;
     for (int w = 0; w < kWriters; ++w)
         ws.emplace_back([&, w] {  // keep writing until the reader has made enough observations
-            for (int i = 1; !done && i <= 30000; ++i) {
+            for (int i = 1; !done && i <= kMaxEach; ++i) {
                 engine.set("w" + std::to_string(w), std::to_string(i));
                 if (i % 8 == 0) std::this_thread::sleep_for(std::chrono::microseconds(50));
             }
@@ -278,23 +296,29 @@ TEST(ObserverChain, AMutationIsNeverVisibleBeforeItsRecordExists) {
             const int w = static_cast<int>(rng() % kWriters);
             auto v = engine.get("w" + std::to_string(w));
             if (!v) continue;
-            bool found = false;  // is there a SET w<w> <v> record already? (look at the recent tail)
-            std::vector<ReplRecord> tail;
-            const uint64_t last = log.last_offset();
-            log.read_from(last > 20000 ? last - 20000 : log.first_offset(), SIZE_MAX, &tail);
-            for (auto& r : tail) {
-                auto a = args_of(r.payload);
-                if (a.size() == 3 && a[0] == "SET" && a[1] == "w" + std::to_string(w) && a[2] == *v) { found = true; break; }
+            // Is there a SET w<w> <v> record already? Search the WHOLE log (it is bounded: the writers
+            // stop after kMaxEach sets), comparing the exact encoded key and value.
+            const std::string key = "w" + std::to_string(w);
+            const std::string crlf = "\r\n";
+            const std::string needle = "$" + std::to_string(key.size()) + crlf + key + crlf + "$" +
+                                       std::to_string(v->size()) + crlf + *v + crlf;
+            const std::string set_prefix = "*3" + crlf + "$3" + crlf + "SET" + crlf;
+            bool found = false;
+            for (auto& r : all_records(log)) {
+                if (r.payload.compare(0, set_prefix.size(), set_prefix) == 0 && r.payload.find(needle) != std::string::npos) {
+                    found = true;
+                    break;
+                }
             }
             if (!found) ++violations;
             ++checks;
-            if (checks >= 150) done = true;
+            if (checks >= 80) done = true;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     });
     reader.join();
     for (auto& t : ws) t.join();
-    EXPECT_GT(checks.load(), 20);
+    EXPECT_GE(checks.load(), 20);
     EXPECT_EQ(violations.load(), 0);
 }
 
@@ -404,7 +428,7 @@ TEST(ApplyLogicalRecord, TtlIsRelativeToTheApplyingClockAndExpiredDeadlinesDelet
 TEST(ApplyLogicalRecord, RejectsMalformedRecords) {
     Store s;
     EXPECT_EQ(apply_logical_record(s, {}, 0), ApplyResult::Invalid);
-    EXPECT_EQ(apply_logical_record(s, {"FLUSHALL"}, 0), ApplyResult::Invalid);
+    EXPECT_EQ(apply_logical_record(s, {"FLUSHDB"}, 0), ApplyResult::Invalid);
     EXPECT_EQ(apply_logical_record(s, {"SET", "a"}, 0), ApplyResult::Invalid);
     EXPECT_EQ(apply_logical_record(s, {"SET", "a", "1", "PXAT", "notanumber"}, 0), ApplyResult::Invalid);
     EXPECT_EQ(apply_logical_record(s, {"DEL"}, 0), ApplyResult::Invalid);

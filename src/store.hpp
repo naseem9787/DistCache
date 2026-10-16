@@ -138,6 +138,14 @@ public:
 
     void set_observer(MutationObserver* observer) override { observer_ = observer; }
 
+    void clear() override {
+        map_.clear();
+        lru_.clear();
+        expiries_.clear();
+        if (observer_) observer_->on_flush();
+    }
+    void set_eviction_enabled(bool enabled) override { evict_enabled_ = enabled; }
+
     void for_each(const EntryVisitor& visit) const override {
         const int64_t t = now();
         for (const auto& [key, e] : map_) {
@@ -185,7 +193,7 @@ private:
     // Called before inserting a new key. Expired keys are free to remove, so reclaim
     // those first; only evict live keys if the store is still full.
     void make_room() {
-        if (max_keys_ == 0 || map_.size() < max_keys_) return;
+        if (!evict_enabled_ || max_keys_ == 0 || map_.size() < max_keys_) return;
         sweep(16);
         while (map_.size() >= max_keys_ && !lru_.empty()) {
             const std::string victim = *lru_.back();  // least recently used (copy: erase frees it)
@@ -229,5 +237,6 @@ private:
     std::set<std::pair<int64_t, std::string>> expiries_;  // (deadline, key), soonest first
     uint64_t evicted_ = 0;
     uint64_t expired_ = 0;
+    bool evict_enabled_ = true;
     MutationObserver* observer_ = nullptr;
 };

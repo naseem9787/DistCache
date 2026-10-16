@@ -31,6 +31,8 @@ public:
     virtual void on_del(const std::string& key) = 0;
     virtual void on_expire(const std::string& key, int64_t ttl_ms) = 0;  // ttl_ms > 0
     virtual void on_persist(const std::string& key) = 0;
+    // Engine::clear() removed every key (replica full resynchronisation). Called once per store.
+    virtual void on_flush() {}
 };
 
 // (key, value, remaining ttl in ms or -1 for none)
@@ -49,6 +51,13 @@ public:
     virtual bool expire(const std::string& key, int64_t ttl_ms) = 0;
     virtual bool persist(const std::string& key) = 0;
     virtual size_t sweep(size_t limit = 1000) = 0;        // active expiration
+
+    // Replication support. clear() drops every key and reports on_flush() to the observer.
+    // set_eviction_enabled(false) makes the engine stop evicting by itself: a replica must not
+    // choose its own LRU victims (its recency order differs, reads are not replicated); the
+    // primary's evictions arrive as DEL records instead. Default: enabled.
+    virtual void clear() = 0;
+    virtual void set_eviction_enabled(bool enabled) = 0;
 
     // Persistence hooks. set_observer must be called before the engine is shared between
     // threads. for_each visits every live (unexpired) entry; on locked engines it copies a

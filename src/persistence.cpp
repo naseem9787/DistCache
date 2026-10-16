@@ -263,6 +263,12 @@ void Persistence::on_persist(const std::string& key) {
     wal_->append_framed(tl_rec.finish());
 }
 
+void Persistence::on_flush() {
+    tl_rec.begin(1);
+    tl_rec.arg("FLUSHALL");
+    wal_->append_framed(tl_rec.finish());
+}
+
 // --- snapshots ------------------------------------------------------------------
 
 bool Persistence::snapshot(std::string* error) {

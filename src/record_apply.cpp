@@ -30,6 +30,7 @@ ApplyResult apply_logical_record(Engine& engine, const std::vector<std::string>&
         engine.set(a[1], a[2], at - now_ms);
         return ApplyResult::Applied;
     }
+    if (cmd == "FLUSHALL" && a.size() == 1) { engine.clear(); return ApplyResult::Applied; }
     if (cmd == "DEL" && a.size() == 2) { engine.del(a[1]); return ApplyResult::Applied; }
     if (cmd == "PEXPIREAT" && a.size() == 3) {
         int64_t at;

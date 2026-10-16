@@ -13,7 +13,7 @@ find_package(Threads REQUIRED)
 # Everything except main(), so tests can link the same code as the server.
 add_library(distcache_core src/resp.cpp src/commands.cpp src/server.cpp src/wal.cpp src/persistence.cpp
             src/hash_ring.cpp src/resp_client.cpp src/router.cpp
-            src/record_apply.cpp src/repl_log.cpp)
+            src/record_apply.cpp src/repl_log.cpp src/replication.cpp)
 target_include_directories(distcache_core PUBLIC src)
 target_link_libraries(distcache_core PUBLIC Threads::Threads)
 
@@ -59,6 +59,6 @@ find_package(GTest REQUIRED)
 add_executable(distcache_tests
   tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp
   tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp
-  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp)
+  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)

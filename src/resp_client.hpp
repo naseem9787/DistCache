@@ -34,6 +34,12 @@ public:
     bool connect(const std::string& host, int port, int io_timeout_ms, std::string* error = nullptr);
     void close();
     bool is_open() const { return fd_ >= 0; }
+    int fd() const { return fd_; }
+    void set_io_timeout(int ms);  // change the send/recv timeout of an open connection
+    // Take over an already connected socket (the connection is closed with this object).
+    bool adopt(int fd, int io_timeout_ms);
+    // True when a reply byte is already buffered or readable without blocking.
+    bool has_pending_input();
 
     bool send_all(const std::string& bytes);
     bool read_raw(std::string& out);

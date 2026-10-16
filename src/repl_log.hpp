@@ -53,6 +53,7 @@ public:
     void on_del(const std::string& key) override;
     void on_expire(const std::string& key, int64_t ttl_ms) override;
     void on_persist(const std::string& key) override;
+    void on_flush() override;
 
     // Lineage. A random 40-hex id; reset() starts a new lineage whose next record is last_offset+1.
     static std::string new_replid();
