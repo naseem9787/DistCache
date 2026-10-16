@@ -137,11 +137,16 @@ public:
         std::string replid;
         uint64_t full_syncs = 0, partial_syncs = 0, reconnects = 0;
         uint64_t records_applied = 0, duplicates_skipped = 0, gaps = 0, invalid = 0;
+        int64_t behind_ms = 0;          // how long the replica has been continuously behind (0 = caught up)
         uint64_t lag() const { return primary_offset > applied ? primary_offset - applied : 0; }
     };
     Status status() const;
     bool wait_applied(uint64_t offset, int timeout_ms) const;
     bool wait_online(int timeout_ms) const;
+    // False until the first synchronisation finished, and from the moment a full resync wipes
+    // the engine until its snapshot is installed. Reads are refused (-LOADING) while false.
+    // A replica that merely lost its link keeps serving its (stale) data.
+    bool readable() const { return readable_.load(std::memory_order_acquire); }
 
     // Fault injection / test control.
     void set_apply_paused(bool paused) { paused_ = paused; }       // stop reading: the link backs up
@@ -159,6 +164,10 @@ private:
     std::thread thread_;
     std::atomic<bool> stop_{false}, paused_{false}, hold_reconnect_{false};
     std::atomic<int> cur_fd_{-1};
+    std::atomic<bool> readable_{false};
+    int64_t behind_since_ms_ = 0;  // guarded by mu_; steady-clock ms, 0 = not behind
+
+    void refresh_locked();  // recompute state / behind_since from the offsets; caller holds mu_
 
     mutable std::mutex mu_;  // guards status_ and replid
     Status status_;

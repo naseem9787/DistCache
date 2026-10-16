@@ -13,7 +13,8 @@ find_package(Threads REQUIRED)
 # Everything except main(), so tests can link the same code as the server.
 add_library(distcache_core src/resp.cpp src/commands.cpp src/server.cpp src/wal.cpp src/persistence.cpp
             src/hash_ring.cpp src/resp_client.cpp src/router.cpp
-            src/record_apply.cpp src/repl_log.cpp src/replication.cpp)
+            src/record_apply.cpp src/repl_log.cpp src/replication.cpp
+            src/node_replication.cpp)
 target_include_directories(distcache_core PUBLIC src)
 target_link_libraries(distcache_core PUBLIC Threads::Threads)
 
@@ -40,7 +41,7 @@ target_link_libraries(bench_wal distcache_core)
 # sampling profiler. Separate target so the production server has none of it. Use it to ATTRIBUTE
 # time, never for headline throughput numbers.
 add_library(distcache_core_diag src/resp.cpp src/commands.cpp src/server.cpp src/wal.cpp src/persistence.cpp src/diag.cpp
-            src/record_apply.cpp)
+            src/record_apply.cpp src/repl_log.cpp src/replication.cpp src/resp_client.cpp src/node_replication.cpp)
 target_include_directories(distcache_core_diag PUBLIC src)
 target_compile_definitions(distcache_core_diag PUBLIC DISTCACHE_DIAGNOSTICS)
 target_compile_options(distcache_core_diag PUBLIC -g -fno-omit-frame-pointer)
@@ -59,6 +60,6 @@ find_package(GTest REQUIRED)
 add_executable(distcache_tests
   tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp
   tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp
-  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp)
+  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp tests/test_node_replication.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)

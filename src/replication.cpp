@@ -340,9 +340,17 @@ void ReplicationReplica::drop_link() {
     if (fd >= 0) ::shutdown(fd, SHUT_RDWR);
 }
 
+void ReplicationReplica::refresh_locked() {
+    const bool caught_up = log_.last_offset() >= status_.primary_offset;
+    status_.state = caught_up ? State::Online : State::Syncing;
+    if (caught_up) behind_since_ms_ = 0;
+    else if (behind_since_ms_ == 0) behind_since_ms_ = steady_ms();
+}
+
 ReplicationReplica::Status ReplicationReplica::status() const {
     std::lock_guard<std::mutex> g(mu_);
     Status s = status_;
+    s.behind_ms = behind_since_ms_ ? steady_ms() - behind_since_ms_ : 0;
     s.applied = log_.last_offset();
     s.replid = log_.replid();
     return s;
@@ -413,6 +421,7 @@ bool ReplicationReplica::session() {
     if (kind == "CONTINUE") {
         if (their_id != log_.replid()) return false;  // protocol violation
         primary_offset = std::strtoull(h.array[3].str.c_str(), nullptr, 10);
+        readable_ = true;
         std::lock_guard<std::mutex> g(mu_);
         ++status_.partial_syncs;
     } else if (kind == "FULLSYNC") {
@@ -421,7 +430,8 @@ bool ReplicationReplica::session() {
             std::lock_guard<std::mutex> g(mu_);
             ++status_.full_syncs;
         }
-        engine_.clear();  // SYNCING: nothing below is visible as "a replica state" until SNAPEND
+        readable_ = false;  // reads get -LOADING until the snapshot is installed
+        engine_.clear();    // SYNCING: nothing below is visible as "a replica state" until SNAPEND
         for (;;) {
             Reply e;
             while (paused_ && !stop_) std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -431,13 +441,14 @@ bool ReplicationReplica::session() {
         }
         log_.reset(their_id, S);  // from now on this node's offsets are the primary's
         primary_offset = S;
+        readable_ = true;
     } else {
         return false;
     }
     {
         std::lock_guard<std::mutex> g(mu_);
         status_.primary_offset = std::max(status_.primary_offset, primary_offset);
-        status_.state = log_.last_offset() >= status_.primary_offset ? State::Online : State::Syncing;
+        refresh_locked();
     }
 
     bool dirty = true;
@@ -485,7 +496,7 @@ bool ReplicationReplica::session() {
         }
         {
             std::lock_guard<std::mutex> g(mu_);
-            status_.state = log_.last_offset() >= status_.primary_offset ? State::Online : State::Syncing;
+            refresh_locked();
         }
         // Acknowledge when everything that had already arrived is applied (not per record), but
         // also every 64 records / 20 ms under sustained load, so the primary always sees progress.

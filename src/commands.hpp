@@ -30,6 +30,15 @@ public:
     //                    sequence N may be released only when durable() >= N.
     //   add/remove_durable_listener(): the callback runs on the flusher thread after durable()
     //                    advances. remove returns only after no callback is running or will run.
+    //
+    // Command gating for replication. Consulted by execute() only when gates_commands() is true,
+    // so a node without replication pays nothing. A write is refused on a replica; any command
+    // that reads the keyspace is refused while a replica is still loading its snapshot.
+    // On refusal *error holds the full error text ("READONLY ...", "LOADING ...").
+    virtual bool gates_commands() const { return false; }
+    virtual bool write_allowed(std::string* error) { (void)error; return true; }
+    virtual bool read_allowed(std::string* error) { (void)error; return true; }
+
     virtual uint64_t take_pending() = 0;
     virtual uint64_t durable() = 0;
     virtual int add_durable_listener(std::function<void()> fn) = 0;

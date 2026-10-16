@@ -15,6 +15,8 @@
 #include <thread>
 
 #include "diag.hpp"
+#include "node_replication.hpp"
+#include "observer_chain.hpp"
 #include "persistence.hpp"
 #include "server.hpp"
 #include "store.hpp"
@@ -41,7 +43,10 @@ void usage() {
         "                    always   : reply only after fdatasync: no acknowledged write is lost\n"
         "                    everysec : fdatasync once a second: a power cut can lose ~1 s\n"
         "                    no       : leave flushing to the OS\n"
-        "  --snapshot-mb N compact the log with a snapshot when a segment passes N MiB (default 64, 0 = off)");
+        "  --snapshot-mb N compact the log with a snapshot when a segment passes N MiB (default 64, 0 = off)\n"
+        "  --repl-port N   serve replicas on this port (this node is a replication primary)\n"
+        "  --replicaof H:P be a read-only replica of the primary whose --repl-port is H:P\n"
+        "  --repl-backlog-mb N  replication backlog budget in MiB (default 64)");
 }
 
 }  // namespace
@@ -53,6 +58,8 @@ int main(int argc, char** argv) {
     std::string dir;
     FsyncPolicy fsync_policy = FsyncPolicy::EverySec;
     uint64_t snapshot_mb = 64;
+    NodeReplicationOptions ro;
+    bool want_repl = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -67,6 +74,16 @@ int main(int argc, char** argv) {
         else if (a == "--max-keys") max_keys = static_cast<size_t>(std::atoll(next()));
         else if (a == "--dir") dir = next();
         else if (a == "--snapshot-mb") snapshot_mb = static_cast<uint64_t>(std::atoll(next()));
+        else if (a == "--repl-port") { ro.repl_port = std::atoi(next()); want_repl = true; }
+        else if (a == "--repl-backlog-mb") ro.backlog_bytes = static_cast<size_t>(std::atoll(next())) << 20;
+        else if (a == "--replicaof") {
+            const std::string spec = next();
+            const size_t colon = spec.rfind(':');
+            if (colon == std::string::npos || colon == 0) { std::fprintf(stderr, "--replicaof wants HOST:PORT\n"); return 2; }
+            ro.replicaof_host = spec.substr(0, colon);
+            ro.replicaof_port = std::atoi(spec.c_str() + colon + 1);
+            want_repl = true;
+        }
         else if (a == "--fsync") {
             if (!parse_fsync_policy(next(), fsync_policy)) {
                 std::fprintf(stderr, "--fsync must be always, everysec or no\n");
@@ -139,7 +156,29 @@ int main(int argc, char** argv) {
         for (const auto& w : rs.warnings) std::fprintf(stderr, "recovery warning: %s\n", w.c_str());
     }
 
-    Server server(*engine, ServerOptions{port, threads, persistence.get()});
+    // Replication (optional). The observer chain is built after persistence opened (open() installs
+    // itself as the engine observer; the chain replaces that single slot) and before any thread
+    // can touch the engine. Without --repl-port / --replicaof nothing here exists and the hook
+    // pointer stays the plain Persistence, exactly as before Phase 8.
+    std::unique_ptr<ReplicationService> repl;
+    std::unique_ptr<NodeHooks> node_hooks;
+    ObserverChain chain;
+    CommandHooks* hooks = persistence.get();
+    if (want_repl) {
+        repl = std::make_unique<ReplicationService>(*engine, ro);
+        if (persistence) chain.add(persistence.get());
+        chain.add(repl->observer());
+        engine->set_observer(&chain);
+        if (!repl->start(&err)) { std::fprintf(stderr, "replication: %s\n", err.c_str()); return 1; }
+        node_hooks = std::make_unique<NodeHooks>(persistence.get(), repl.get());
+        hooks = node_hooks.get();
+        if (repl->role() == ReplicationService::Role::Replica)
+            std::printf("replica of %s:%d\n", ro.replicaof_host.c_str(), ro.replicaof_port);
+        else
+            std::printf("replication primary, replication port %d\n", repl->repl_port());
+    }
+
+    Server server(*engine, ServerOptions{port, threads, hooks});
     if (!server.start(&err)) { std::fprintf(stderr, "failed to start: %s\n", err.c_str()); return 1; }
     std::printf("distcache listening on port %d (mode=%s, workers=%d, shards=%zu, max_keys=%zu)\n",
                 server.port(), engine->mode(), std::max(1, threads), engine->shards(), engine->max_keys());
@@ -147,6 +186,7 @@ int main(int argc, char** argv) {
 
     while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     server.stop();                         // stop accepting and serving first...
+    if (repl) repl->stop();
     if (persistence) persistence->close(); // ...then flush and fsync the log
 #ifdef DISTCACHE_DIAGNOSTICS
     diag::profiler_stop();

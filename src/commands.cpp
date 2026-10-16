@@ -19,6 +19,13 @@ std::string upper(std::string s) {
     return s;
 }
 
+bool is_write_command(const std::string& c) {
+    return c == "SET" || c == "DEL" || c == "EXPIRE" || c == "PEXPIRE" || c == "PERSIST";
+}
+bool is_read_command(const std::string& c) {
+    return c == "GET" || c == "TTL" || c == "PTTL" || c == "DBSIZE" || c == "KEYS";
+}
+
 std::string wrong_args(const std::string& cmd) {
     return resp_error("ERR wrong number of arguments for '" + cmd + "' command");
 }
@@ -76,6 +83,15 @@ std::string cmd_ttl(Engine& store, const std::vector<std::string>& args, bool se
 std::string execute(Engine& store, const std::vector<std::string>& args, CommandHooks* hooks) {
     if (args.empty()) return "";  // blank line: nothing to say
     const std::string cmd = upper(args[0]);
+
+    if (hooks && hooks->gates_commands()) {  // replication: READONLY on replicas, LOADING while syncing
+        std::string why;
+        if (is_write_command(cmd)) {
+            if (!hooks->write_allowed(&why)) return resp_error(why);
+        } else if (is_read_command(cmd)) {
+            if (!hooks->read_allowed(&why)) return resp_error(why);
+        }
+    }
 
     if (cmd == "PING") {
         if (args.size() == 1) return resp_simple("PONG");
