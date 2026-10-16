@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "diag.hpp"
+#include "record_apply.hpp"
 #include "resp.hpp"
 
 namespace {
@@ -89,28 +90,12 @@ bool Persistence::verify_snapshot(const std::string& path, uint64_t* keys) const
 bool Persistence::apply_record(const std::string& payload, RecoveryStats* st) {
     std::vector<std::string> a;
     if (!decode(payload, &a)) return false;
-    const std::string& cmd = a[0];
-    const int64_t now = wall();
-    if (cmd == "SET" && (a.size() == 3 || (a.size() == 5 && a[3] == "PXAT"))) {
-        if (a.size() == 3) { engine_.set(a[1], a[2]); return true; }
-        int64_t at;
-        if (!parse_i64(a[4], &at)) return false;
-        if (at - now <= 0) {          // its deadline passed while the server was down
-            engine_.del(a[1]);        // and any older value of the key must not come back either
-            ++st->expired_skipped;
-        } else {
-            engine_.set(a[1], a[2], at - now);
-        }
-        return true;
+    // The rules for applying a record live in apply_logical_record, shared with replication.
+    switch (apply_logical_record(engine_, a, wall())) {
+        case ApplyResult::Applied: return true;
+        case ApplyResult::ExpiredSkipped: ++st->expired_skipped; return true;  // deadline passed while down
+        case ApplyResult::Invalid: return false;
     }
-    if (cmd == "DEL" && a.size() == 2) { engine_.del(a[1]); return true; }
-    if (cmd == "PEXPIREAT" && a.size() == 3) {
-        int64_t at;
-        if (!parse_i64(a[2], &at)) return false;
-        engine_.expire(a[1], at - now);  // <= 0 deletes, same as at runtime
-        return true;
-    }
-    if (cmd == "PERSIST" && a.size() == 2) { engine_.persist(a[1]); return true; }
     return false;
 }
 
