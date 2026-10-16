@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -67,6 +68,16 @@ public:
     int port() const { return port_; }
 
     void set_epoch(int64_t e) { epoch_.store(e); }
+    // Called (from a replication thread) every time a replica's ACK arrives. Set before start().
+    void set_ack_callback(std::function<void()> cb) { ack_cb_ = std::move(cb); }
+
+    // The replicas that currently count for synchronous replication: distinct replica ids (a
+    // replica that reconnected may still have an old link open; it counts once, with its best
+    // acknowledgement), streaming (past their snapshot) and heard from within max_ack_age_ms.
+    size_t in_sync_replicas(int64_t max_ack_age_ms) const;
+    // Highest offset acknowledged by at least n distinct in-sync replicas; 0 if fewer than n are
+    // in sync; UINT64_MAX for n == 0.
+    uint64_t acked_by(size_t n, int64_t max_ack_age_ms) const;
     ReplFaults& faults() { return faults_; }
     void disconnect_replicas();  // cut every replica link now (they reconnect)
 
@@ -88,6 +99,7 @@ public:
 
 private:
     struct Link;
+    std::map<std::string, uint64_t> in_sync_acks(int64_t max_ack_age_ms) const;
     void accept_loop();
     void serve(std::shared_ptr<Link> link);
     bool stream_snapshot(Link& l, uint64_t* S);
@@ -101,6 +113,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<int64_t> epoch_{0};
     std::atomic<uint64_t> kill_generation_{0};
+    std::function<void()> ack_cb_;
     ReplFaults faults_;
     std::thread acceptor_;
 
@@ -118,6 +131,7 @@ public:
         int reconnect_min_ms = 20;
         int reconnect_max_ms = 500;
         std::function<int64_t()> wall_ms;
+        std::string replica_id;            // identity of this replica process; random if empty
     };
     // `log` is the replica's MIRROR of the primary's log (same offsets), used for resynchronisation
     // and, after a promotion, to serve other replicas. Eviction is switched off on `engine`.
@@ -169,6 +183,7 @@ private:
 
     void refresh_locked();  // recompute state / behind_since from the offsets; caller holds mu_
 
+    std::string rid_;
     mutable std::mutex mu_;  // guards status_ and replid
     Status status_;
     int64_t epoch_ = 0;

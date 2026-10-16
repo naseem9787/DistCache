@@ -61,6 +61,10 @@ public:
     void reset(std::string replid, uint64_t last_offset);
 
     uint64_t last_offset() const { return last_.load(std::memory_order_acquire); }
+    // The offset of the calling thread's most recent LOCAL append (observer callback), cleared on
+    // read; 0 if none. The server asks for it after executing a batch to learn which offset the
+    // batch's replies depend on (sync N).
+    static uint64_t take_thread_offset();
     uint64_t first_offset() const;  // oldest retained offset; last_offset()+1 when empty
 
     // Replica side: mirror a record received from the primary under its original offset.

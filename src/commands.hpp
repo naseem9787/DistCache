@@ -39,6 +39,16 @@ public:
     virtual bool write_allowed(std::string* error) { (void)error; return true; }
     virtual bool read_allowed(std::string* error) { (void)error; return true; }
 
+    // Synchronous replication (sync N), same shape as the durability hooks below:
+    //   take_repl_pending(): replication offset the calling thread's batch must wait for, or 0.
+    //   repl_acked():        highest offset acknowledged by at least N distinct in-sync replicas.
+    //                        A reply that depends on offset o may be released only when o <= this.
+    //   repl_timeout_ms():   how long a reply may wait before the connection is closed instead.
+    // Defaults describe "no replication wait", so existing implementations are unaffected.
+    virtual uint64_t take_repl_pending() { return 0; }
+    virtual uint64_t repl_acked() { return UINT64_MAX; }
+    virtual int repl_timeout_ms() { return 0; }
+
     virtual uint64_t take_pending() = 0;
     virtual uint64_t durable() = 0;
     virtual int add_durable_listener(std::function<void()> fn) = 0;

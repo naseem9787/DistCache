@@ -17,6 +17,7 @@ bool ReplicationService::start(std::string* error) {
         o.host = opts_.replicaof_host;
         o.port = opts_.replicaof_port;
         o.link_timeout_ms = opts_.link_timeout_ms;
+        o.replica_id = opts_.replica_id;
         replica_ = std::make_unique<ReplicationReplica>(engine_, log_, o);
         replica_->start();
         return true;
@@ -26,6 +27,7 @@ bool ReplicationService::start(std::string* error) {
         o.port = opts_.repl_port;
         o.send_timeout_ms = opts_.send_timeout_ms;
         primary_ = std::make_unique<ReplicationPrimary>(engine_, log_, o);
+        primary_->set_ack_callback([this] { notify_ack_listeners(); });
         if (!primary_->start(error)) { primary_.reset(); return false; }
     }
     return true;
@@ -42,7 +44,42 @@ bool ReplicationService::write_allowed(std::string* error) const {
         *error = "READONLY You can't write against a read only replica.";
         return false;
     }
+    if (opts_.sync_replicas > 0) {  // sync N: refuse up front rather than accept a write nobody can confirm
+        const size_t have = primary_ ? primary_->in_sync_replicas(opts_.max_ack_age_ms) : 0;
+        if (have < static_cast<size_t>(opts_.sync_replicas)) {
+            *error = "NOREPLICAS Not enough in-sync replicas to write (need " + std::to_string(opts_.sync_replicas) +
+                     ", have " + std::to_string(have) + ")";
+            return false;
+        }
+    }
     return true;
+}
+
+uint64_t ReplicationService::take_repl_pending() {
+    const uint64_t o = ReplicationLog::take_thread_offset();  // always clear: it must not leak into the next batch
+    return opts_.sync_replicas > 0 ? o : 0;
+}
+
+uint64_t ReplicationService::repl_acked() const {
+    if (opts_.sync_replicas <= 0 || !primary_) return UINT64_MAX;
+    return primary_->acked_by(static_cast<size_t>(opts_.sync_replicas), opts_.max_ack_age_ms);
+}
+
+int ReplicationService::add_ack_listener(std::function<void()> fn) {
+    std::lock_guard<std::mutex> g(lmu_);
+    const int id = next_listener_++;
+    ack_listeners_[id] = std::move(fn);
+    return id;
+}
+
+void ReplicationService::remove_ack_listener(int id) {
+    std::lock_guard<std::mutex> g(lmu_);
+    ack_listeners_.erase(id);
+}
+
+void ReplicationService::notify_ack_listeners() {
+    std::lock_guard<std::mutex> g(lmu_);
+    for (auto& kv : ack_listeners_) kv.second();  // each just writes an eventfd
 }
 
 bool ReplicationService::read_allowed(std::string* error) const {
@@ -84,8 +121,11 @@ std::string ReplicationService::info() const {
     o << "role:master\r\n"
       << "repl_id:" << log_.replid() << "\r\n"
       << "repl_offset:" << log_.last_offset() << "\r\n"
-      << "repl_enabled:" << (primary_ ? "yes" : "no") << "\r\n";
+      << "repl_enabled:" << (primary_ ? "yes" : "no") << "\r\n"
+      << "sync_replicas:" << opts_.sync_replicas << "\r\n";
     if (primary_) {
+        o << "in_sync_replicas:" << primary_->in_sync_replicas(opts_.max_ack_age_ms) << "\r\n";
+        if (opts_.sync_replicas > 0) o << "acked_by_quorum:" << repl_acked() << "\r\n";
         o << "repl_port:" << primary_->port() << "\r\n"
           << "backlog_first_offset:" << log_.first_offset() << "\r\n"
           << "backlog_records:" << ls.buffered_records << "\r\n"
@@ -108,7 +148,30 @@ std::string ReplicationService::info() const {
     return o.str();
 }
 
-// --- NodeHooks -----------------------------------------------------------------------------------
+// --- NodeHooks ---
+
+int NodeHooks::add_durable_listener(std::function<void()> fn) {
+    Ids ids;
+    if (p_) ids.p = p_->add_durable_listener(fn);
+    if (r_) ids.r = r_->add_ack_listener(std::move(fn));
+    std::lock_guard<std::mutex> g(mu_);
+    const int id = next_id_++;
+    ids_[id] = ids;
+    return id;
+}
+
+void NodeHooks::remove_durable_listener(int id) {
+    Ids ids;
+    {
+        std::lock_guard<std::mutex> g(mu_);
+        auto it = ids_.find(id);
+        if (it == ids_.end()) return;
+        ids = it->second;
+        ids_.erase(it);
+    }
+    if (p_) p_->remove_durable_listener(ids.p);
+    if (r_) r_->remove_ack_listener(ids.r);
+}
 
 bool NodeHooks::save(std::string* error) {
     if (!p_) {

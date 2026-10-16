@@ -16,7 +16,10 @@
 // the applier with the PRIMARY's offsets, and letting the observer append as well would number
 // the same mutation twice. (Promotion, a later step, closes/opens the gate.)
 #include <atomic>
+#include <functional>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "commands.hpp"
@@ -50,6 +53,14 @@ struct NodeReplicationOptions {
     size_t backlog_bytes = 64u << 20; // replication log budget
     int send_timeout_ms = 5000;
     int link_timeout_ms = 2000;
+    // Acknowledgement policy. 0 = asynchronous (reply after the local apply). N >= 1 = sync N: a
+    // write is acknowledged only after N distinct in-sync replicas confirmed applying it; with
+    // fewer than N in sync, writes are refused (-NOREPLICAS); if the confirmations do not arrive
+    // within sync_timeout_ms the connection is closed (outcome unknown to the client).
+    std::string replica_id;           // replica side: identity of this process (random if empty; tests set it)
+    int sync_replicas = 0;
+    int sync_timeout_ms = 1000;
+    int max_ack_age_ms = 1500;  // a replica silent this long is not "in sync"
 };
 
 class ReplicationService {
@@ -70,6 +81,13 @@ public:
     bool read_allowed(std::string* error) const;
     std::string info() const;  // the "# Replication" section
 
+    // sync N support (CommandHooks)
+    uint64_t take_repl_pending();
+    uint64_t repl_acked() const;
+    int repl_timeout_ms() const { return opts_.sync_timeout_ms; }
+    int add_ack_listener(std::function<void()> fn);
+    void remove_ack_listener(int id);
+
     ReplicationLog& log() { return log_; }
     ReplicationPrimary* primary() { return primary_.get(); }
     ReplicationReplica* replica() { return replica_.get(); }
@@ -81,6 +99,10 @@ private:
     GatedObserver gate_;
     std::unique_ptr<ReplicationPrimary> primary_;
     std::unique_ptr<ReplicationReplica> replica_;
+    std::mutex lmu_;
+    std::map<int, std::function<void()>> ack_listeners_;
+    int next_listener_ = 1;
+    void notify_ack_listeners();
 };
 
 // CommandHooks for a node that has replication and possibly persistence. Persistence calls are
@@ -94,14 +116,21 @@ public:
     void commit() override { if (p_) p_->commit(); }
     uint64_t take_pending() override { return p_ ? p_->take_pending() : 0; }
     uint64_t durable() override { return p_ ? p_->durable() : 0; }
-    int add_durable_listener(std::function<void()> fn) override { return p_ ? p_->add_durable_listener(std::move(fn)) : 0; }
-    void remove_durable_listener(int id) override { if (p_) p_->remove_durable_listener(id); }
+    int add_durable_listener(std::function<void()> fn) override;
+    void remove_durable_listener(int id) override;
+    uint64_t take_repl_pending() override { return r_ ? r_->take_repl_pending() : 0; }
+    uint64_t repl_acked() override { return r_ ? r_->repl_acked() : UINT64_MAX; }
+    int repl_timeout_ms() override { return r_ ? r_->repl_timeout_ms() : 0; }
 
     bool gates_commands() const override { return r_ != nullptr; }
     bool write_allowed(std::string* error) override { return r_ ? r_->write_allowed(error) : true; }
     bool read_allowed(std::string* error) override { return r_ ? r_->read_allowed(error) : true; }
 
 private:
+    struct Ids { int p = 0; int r = 0; };
     Persistence* p_;
     ReplicationService* r_;
+    std::mutex mu_;
+    std::map<int, Ids> ids_;
+    int next_id_ = 1;
 };

@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <map>
 
 #include "record_apply.hpp"
 #include "resp.hpp"
@@ -58,6 +59,7 @@ struct ReplicationPrimary::Link {
     std::mutex fd_mu;  // guards fd (stop() shuts it down from another thread)
     int fd = -1;
     std::string peer;
+    std::string rid;            // the replica process's id (from SYNC)
     std::atomic<int> state{0};  // 0 handshake, 1 full-sync, 2 streaming
     std::atomic<uint64_t> sent{0}, acked{0};
     std::atomic<int64_t> last_ack_ms{0};
@@ -183,6 +185,33 @@ ReplicationPrimary::Stats ReplicationPrimary::stats() const {
     return Stats{n_links_, n_full_, n_partial_, n_too_old_, n_send_failed_};
 }
 
+size_t ReplicationPrimary::in_sync_replicas(int64_t max_ack_age_ms) const {
+    return in_sync_acks(max_ack_age_ms).size();
+}
+
+std::map<std::string, uint64_t> ReplicationPrimary::in_sync_acks(int64_t max_ack_age_ms) const {
+    std::map<std::string, uint64_t> best;
+    std::lock_guard<std::mutex> g(mu_);
+    const int64_t now = steady_ms();
+    for (const auto& l : links_) {
+        if (l->done || l->state != 2 || l->rid.empty()) continue;
+        if (now - l->last_ack_ms.load() > max_ack_age_ms) continue;
+        auto& slot = best[l->rid];
+        slot = std::max<uint64_t>(slot, l->acked.load());
+    }
+    return best;
+}
+
+uint64_t ReplicationPrimary::acked_by(size_t n, int64_t max_ack_age_ms) const {
+    if (n == 0) return UINT64_MAX;
+    const auto best = in_sync_acks(max_ack_age_ms);
+    if (best.size() < n) return 0;
+    std::vector<uint64_t> v;
+    for (const auto& kv : best) v.push_back(kv.second);
+    std::sort(v.begin(), v.end(), std::greater<uint64_t>());
+    return v[n - 1];
+}
+
 // One replica connection: handshake, then (snapshot and) stream until anything goes wrong.
 void ReplicationPrimary::serve(std::shared_ptr<Link> link) {
     ++n_links_;
@@ -200,12 +229,13 @@ void ReplicationPrimary::serve(std::shared_ptr<Link> link) {
     };
 
     Reply req;
-    if (!rc->read_reply(req) || req.type != '*' || req.array.size() != 4 || req.array[0].str != "SYNC") {
-        send_fd(link->fd, "-ERR expected SYNC <replid> <next_offset> <epoch>\r\n");
+    if (!rc->read_reply(req) || req.type != '*' || req.array.size() != 5 || req.array[0].str != "SYNC") {
+        send_fd(link->fd, "-ERR expected SYNC <replid> <next_offset> <epoch> <replica_id>\r\n");
         return finish();
     }
     const std::string their_id = req.array[1].str;
     const uint64_t next = std::strtoull(req.array[2].str.c_str(), nullptr, 10);
+    link->rid = req.array[4].str;
     const std::string myid = log_.replid();
     const int64_t epoch = epoch_.load();
 
@@ -237,12 +267,13 @@ void ReplicationPrimary::serve(std::shared_ptr<Link> link) {
 
     // From here on the replica's ACKs are read on a second thread (rc is only read by it).
     rc->set_io_timeout(3000);  // streaming phase: the replica ACKs at least every ping_ms
-    link->ack_th = std::thread([link, conn = std::move(rc)]() mutable {
+    link->ack_th = std::thread([this, link, conn = std::move(rc)]() mutable {
         Reply r;
         while (conn->read_reply(r)) {
             if (r.type == '*' && r.array.size() == 2 && r.array[0].str == "ACK") {
                 link->acked = std::strtoull(r.array[1].str.c_str(), nullptr, 10);
                 link->last_ack_ms = steady_ms();
+                if (ack_cb_) ack_cb_();  // wake workers holding replies for sync N
             }
         }
         link->shutdown_socket();  // replica gone or silent: stop the sender too
@@ -317,6 +348,7 @@ bool ReplicationPrimary::stream_records(Link& l, uint64_t cursor) {
 ReplicationReplica::ReplicationReplica(Engine& engine, ReplicationLog& log, Options opts)
     : engine_(engine), log_(log), opts_(std::move(opts)) {
     if (!opts_.wall_ms) opts_.wall_ms = system_wall_ms;
+    rid_ = opts_.replica_id.empty() ? ReplicationLog::new_replid() : opts_.replica_id;
     engine_.set_eviction_enabled(false);  // the primary's evictions arrive as DEL records
 }
 
@@ -410,7 +442,7 @@ bool ReplicationReplica::session() {
         ~FdGuard() { std::lock_guard<std::mutex> g(r.mu_); r.cur_fd_ = -1; }
     } guard{*this};
 
-    if (!rc.send_all(encode_command({"SYNC", log_.replid(), std::to_string(log_.last_offset() + 1), std::to_string(epoch_)})))
+    if (!rc.send_all(encode_command({"SYNC", log_.replid(), std::to_string(log_.last_offset() + 1), std::to_string(epoch_), rid_})))
         return false;
     Reply h;
     if (!rc.read_reply(h) || h.type != '*' || h.array.size() < 4) return false;  // includes an -ERR line
@@ -460,6 +492,10 @@ bool ReplicationReplica::session() {
         while (paused_ && !stop_) std::this_thread::sleep_for(std::chrono::milliseconds(2));
         Reply r;
         if (stop_ || !rc.read_reply(r) || r.type != '*' || r.array.empty()) return true;  // timeout, EOF, error
+        // Test control: a paused replica holds the frame it has just READ without applying it, so
+        // "paused" really means "nothing received from now on is applied or acknowledged".
+        while (paused_ && !stop_) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if (stop_) return true;
         const std::string& tag = r.array[0].str;
         if (tag == "R" && r.array.size() == 3) {
             const uint64_t offset = std::strtoull(r.array[1].str.c_str(), nullptr, 10);

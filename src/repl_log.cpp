@@ -74,9 +74,19 @@ uint64_t ReplicationLog::push_locked(std::string payload, uint64_t offset) {
     return offset;
 }
 
+namespace {
+thread_local uint64_t tl_last_offset = 0;
+}
+
+uint64_t ReplicationLog::take_thread_offset() {
+    const uint64_t o = tl_last_offset;
+    tl_last_offset = 0;
+    return o;
+}
+
 void ReplicationLog::append_local(std::string payload) {
     std::lock_guard<std::mutex> lock(mu_);
-    push_locked(std::move(payload), last_.load(std::memory_order_relaxed) + 1);
+    tl_last_offset = push_locked(std::move(payload), last_.load(std::memory_order_relaxed) + 1);
 }
 
 void ReplicationLog::on_set(const std::string& key, const std::string& value, std::optional<int64_t> ttl_ms) {

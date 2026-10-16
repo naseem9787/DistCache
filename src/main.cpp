@@ -46,7 +46,10 @@ void usage() {
         "  --snapshot-mb N compact the log with a snapshot when a segment passes N MiB (default 64, 0 = off)\n"
         "  --repl-port N   serve replicas on this port (this node is a replication primary)\n"
         "  --replicaof H:P be a read-only replica of the primary whose --repl-port is H:P\n"
-        "  --repl-backlog-mb N  replication backlog budget in MiB (default 64)");
+        "  --repl-backlog-mb N  replication backlog budget in MiB (default 64)\n"
+        "  --repl-sync N   acknowledge a write only after N replicas applied it (default 0 = async);\n"
+        "                  refuses writes (-NOREPLICAS) while fewer than N replicas are in sync\n"
+        "  --repl-sync-timeout-ms N  close the connection if the N acks do not arrive in time (default 1000)");
 }
 
 }  // namespace
@@ -75,6 +78,8 @@ int main(int argc, char** argv) {
         else if (a == "--dir") dir = next();
         else if (a == "--snapshot-mb") snapshot_mb = static_cast<uint64_t>(std::atoll(next()));
         else if (a == "--repl-port") { ro.repl_port = std::atoi(next()); want_repl = true; }
+        else if (a == "--repl-sync") ro.sync_replicas = std::atoi(next());
+        else if (a == "--repl-sync-timeout-ms") ro.sync_timeout_ms = std::atoi(next());
         else if (a == "--repl-backlog-mb") ro.backlog_bytes = static_cast<size_t>(std::atoll(next())) << 20;
         else if (a == "--replicaof") {
             const std::string spec = next();

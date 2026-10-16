@@ -30,9 +30,15 @@ constexpr size_t kMaxInputBuffer = 64 * 1024 * 1024;
 constexpr int kLoopTimeoutMs = 100;     // also the active-expiration tick and the stop latency
 constexpr int64_t kSweepEveryMs = 100;
 
-// A batch of replies that must not leave until log record `seq` is durable (fsync=always).
+// A batch of replies that must not leave until BOTH conditions hold:
+//   * WAL record `seq` is durable (fsync=always; 0 = no such condition), and
+//   * replication offset `repl` is acknowledged by N replicas (sync N; 0 = no such condition).
+// A batch that waits for replicas also has a deadline: if it passes, the connection is closed
+// (the write was applied locally but its outcome is unknown to the client; see replication docs).
 struct Held {
     uint64_t seq;
+    uint64_t repl;
+    int64_t deadline_ms;  // 0 = none
     std::string bytes;
 };
 
@@ -177,8 +183,10 @@ private:
     // connection must stay in order; hence "!c.held.empty()" also forces queueing.
     void gate(Conn& c, size_t batch_start) {
         const uint64_t seq = hooks_ ? hooks_->take_pending() : 0;
-        if ((seq != 0 || !c.held.empty()) && c.out.size() > batch_start) {
-            c.held.push_back(Held{seq, c.out.substr(batch_start)});
+        const uint64_t repl = hooks_ ? hooks_->take_repl_pending() : 0;
+        if ((seq != 0 || repl != 0 || !c.held.empty()) && c.out.size() > batch_start) {
+            const int64_t deadline = repl != 0 ? Store::real_now_ms() + hooks_->repl_timeout_ms() : 0;
+            c.held.push_back(Held{seq, repl, deadline, c.out.substr(batch_start)});
             c.out.resize(batch_start);
         }
     }
@@ -187,8 +195,16 @@ private:
     void settle(int fd, Conn& c) {
         if (c.held.empty()) return;
         const uint64_t d = hooks_ ? hooks_->durable() : UINT64_MAX;  // read AFTER enqueue: no lost wake-up
-        while (!c.held.empty() && c.held.front().seq <= d) {
-            c.out += c.held.front().bytes;
+        uint64_t acked = 0;
+        bool have_acked = false;
+        while (!c.held.empty()) {
+            const Held& h = c.held.front();
+            if (h.seq > d) break;
+            if (h.repl != 0) {  // read lazily: most connections never wait for replicas
+                if (!have_acked) { acked = hooks_ ? hooks_->repl_acked() : UINT64_MAX; have_acked = true; }
+                if (h.repl > acked) break;
+            }
+            c.out += h.bytes;
             c.held.pop_front();
         }
         if (c.held.empty()) waiting_.erase(fd); else waiting_.insert(fd);
@@ -200,6 +216,11 @@ private:
             auto it = conns_.find(fd);
             if (it == conns_.end()) { waiting_.erase(fd); continue; }
             settle(fd, it->second);
+            const Conn& c = it->second;
+            if (!c.held.empty() && c.held.front().deadline_ms != 0 && Store::real_now_ms() > c.held.front().deadline_ms) {
+                close_conn(fd);  // replicas did not acknowledge in time: drop the replies, the client sees EOF
+                continue;
+            }
             flush(fd);  // may close the connection
         }
     }
