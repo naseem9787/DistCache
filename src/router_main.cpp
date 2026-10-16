@@ -27,6 +27,16 @@ void usage() {
         "  --port N               listen port (default 6390)\n"
         "  --node NAME=HOST:PORT[@WEIGHT]   a backend node; repeat for each node\n"
         "                         NAME is the node's identity on the ring (placement depends on it)\n"
+        "  --replica NAME=HOST:PORT   a replica (client port) of shard NAME; repeat per replica. A shard with\n"
+        "                         replicas is watched by the failover coordinator (its nodes need --repl-port\n"
+        "                         and --repl-require-lease; the primary one of --node, replicas --replicaof)\n"
+        "  --lease-ms N           write lease length L (default 2000); renewed every --probe-ms\n"
+        "  --probe-ms N           probe / renewal period (default 500)\n"
+        "  --probe-timeout-ms N   per-request timeout towards nodes, D (default 500)\n"
+        "  --fail-after N         failed probes before a primary is declared failed, F (default 3)\n"
+        "  --guard-ms N           guard band G added to the lease bound (default 500)\n"
+        "  --sync-replicas N      the --repl-sync the shard's nodes run with (default 0); sets the promotion rule\n"
+        "  --state-file PATH      remember the highest epoch of every shard across router restarts\n"
         "  --vnodes N             ring points per unit of weight (default 160)\n"
         "  --timeout-ms N         connect/send/recv timeout towards nodes (default 3000)\n"
         "At runtime:  RING INFO | RING LOOKUP key | RING ADD name host port [weight] [MIGRATE]\n"
@@ -56,6 +66,7 @@ bool parse_node(const std::string& s, RouterNode* n) {
 int main(int argc, char** argv) {
     RouterOptions opts;
     std::vector<RouterNode> nodes;
+    std::vector<std::pair<std::string, RouterReplica>> pending_replicas;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> const char* {
@@ -65,6 +76,23 @@ int main(int argc, char** argv) {
         if (a == "--port") opts.port = std::atoi(next());
         else if (a == "--vnodes") opts.vnodes = static_cast<uint32_t>(std::max(1, std::atoi(next())));
         else if (a == "--timeout-ms") opts.io_timeout_ms = std::atoi(next());
+        else if (a == "--lease-ms") opts.failover.lease_ms = std::atoi(next());
+        else if (a == "--probe-ms") opts.failover.probe_ms = std::atoi(next());
+        else if (a == "--probe-timeout-ms") opts.failover.probe_timeout_ms = std::atoi(next());
+        else if (a == "--fail-after") opts.failover.fail_after = std::atoi(next());
+        else if (a == "--guard-ms") opts.failover.guard_ms = std::atoi(next());
+        else if (a == "--sync-replicas") opts.failover.sync_replicas = std::atoi(next());
+        else if (a == "--state-file") opts.failover.state_file = next();
+        else if (a == "--replica") {
+            const std::string spec = next();
+            const size_t eq = spec.find('=');
+            const size_t colon = spec.rfind(':');
+            if (eq == std::string::npos || colon == std::string::npos || colon < eq) {
+                std::fprintf(stderr, "bad --replica '%s' (want SHARD=HOST:PORT)\n", spec.c_str());
+                return 2;
+            }
+            pending_replicas.push_back({spec.substr(0, eq), {spec.substr(eq + 1, colon - eq - 1), std::atoi(spec.c_str() + colon + 1)}});
+        }
         else if (a == "--node") {
             RouterNode n;
             const std::string spec = next();
@@ -74,6 +102,12 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); usage(); return 2; }
     }
 
+    for (auto& pr : pending_replicas) {
+        bool found = false;
+        for (auto& n : nodes)
+            if (n.name == pr.first) { n.replicas.push_back(pr.second); found = true; }
+        if (!found) { std::fprintf(stderr, "--replica for unknown shard '%s' (declare it with --node first)\n", pr.first.c_str()); return 2; }
+    }
     Router router(std::move(nodes), opts);
     std::string err;
     if (!router.start(&err)) { std::fprintf(stderr, "cannot start: %s\n", err.c_str()); return 1; }

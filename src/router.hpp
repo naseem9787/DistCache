@@ -26,6 +26,7 @@
 // process. Several routers sharing one set of nodes can serve traffic with a static ring, but
 // must not migrate concurrently with each other or with unmigrated writers.
 #include <array>
+#include <functional>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -35,19 +36,28 @@
 #include <thread>
 #include <vector>
 
+#include "coordinator.hpp"
 #include "hash_ring.hpp"
+
+struct RouterReplica {
+    std::string host;
+    int port = 0;   // the replica's CLIENT port
+};
 
 struct RouterNode {
     std::string name;   // identity on the ring: placement depends on this, not on the address
-    std::string host;
+    std::string host;   // the shard's primary at start-up; after a failover, the promoted replica's address
     int port = 0;
     uint32_t weight = 1;
+    std::vector<RouterReplica> replicas;  // makes this node a REPLICATED SHARD: the coordinator watches it
+    bool available = true;                // replicated shards start unavailable until the coordinator confirms them
 };
 
 struct RouterOptions {
     int port = 6390;                                  // 0 = let the OS pick (see Router::port())
     uint32_t vnodes = HashRing::kDefaultVnodes;       // ring points per unit of weight
     int io_timeout_ms = 3000;                         // connect / send / recv timeout towards nodes
+    CoordinatorOptions failover;                      // lease / probe / failure-detection parameters
 };
 
 struct MigrationReport {
@@ -75,6 +85,7 @@ public:
     bool remove_node(const std::string& name, bool migrate, MigrationReport* report, std::string* error);
 
     std::string info() const;                       // the text served by RING INFO / INFO
+    Coordinator* coordinator() { return coordinator_.get(); }  // null if no shard has replicas
     std::string owner_of(const std::string& key) const;  // "" when the ring is empty
 
 private:
@@ -84,6 +95,12 @@ private:
 
     std::shared_ptr<const Route> route() const;
     void publish(std::shared_ptr<const Route> r);
+    // Every route change is a read-copy-modify-publish under one mutex, so the failover coordinator
+    // (which changes a shard's primary ADDRESS) and a topology change (which changes the ring) cannot
+    // overwrite each other's update.
+    void update_route(const std::function<void(Route&)>& fn);
+    void set_shard_primary(const std::string& shard, const std::string& host, int port);
+    void set_shard_available(const std::string& shard, bool available);
     void accept_loop();
     MigrationReport migrate_keys(const Route& route, const std::vector<std::string>& sources);
 
@@ -97,6 +114,8 @@ private:
 
     std::shared_ptr<const Route> route_;   // accessed with std::atomic_load / atomic_store
     std::mutex admin_mu_;                  // one topology change at a time
+    std::mutex publish_mu_;                // serialises update_route
+    std::unique_ptr<Coordinator> coordinator_;
     // Number of client batches currently running on the unlocked fast path. A migration
     // publishes its "migrating" route first and then waits for this to reach zero, so no
     // unlocked operation can overlap the first migration step. (A reader/writer lock would do

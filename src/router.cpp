@@ -47,6 +47,10 @@ std::string node_error(const std::string& node, const std::string& why) {
 
 std::string no_nodes() { return resp_error("ERR no nodes in the ring"); }
 
+std::string shard_unavailable(const std::string& shard) {
+    return resp_error("ERR shard '" + shard + "' is unavailable (failover in progress, or no safe primary)");
+}
+
 bool parse_integer_reply(const std::string& raw, long long* v) {
     if (raw.size() < 4 || raw[0] != ':') return false;
     *v = std::strtoll(raw.c_str() + 1, nullptr, 10);
@@ -73,6 +77,7 @@ struct Router::Route {
     std::shared_ptr<const HashRing> old_ring;  // set only while a migration is running
     std::map<std::string, RouterNode> nodes;   // every node that may need to be contacted
     uint64_t version = 0;
+    bool any_replicated = false;               // some shard is watched by the coordinator (enables availability checks)
 };
 
 struct Router::SessionHandle {
@@ -84,6 +89,29 @@ struct Router::SessionHandle {
 
 std::shared_ptr<const Router::Route> Router::route() const { return std::atomic_load(&route_); }
 void Router::publish(std::shared_ptr<const Route> r) { std::atomic_store(&route_, std::move(r)); }
+
+void Router::update_route(const std::function<void(Route&)>& fn) {
+    std::lock_guard<std::mutex> lock(publish_mu_);
+    auto next = std::make_shared<Route>(*route());
+    fn(*next);
+    ++next->version;
+    publish(std::move(next));
+}
+
+void Router::set_shard_available(const std::string& shard, bool available) {
+    update_route([&](Route& r) {
+        auto it = r.nodes.find(shard);
+        if (it != r.nodes.end()) it->second.available = available;
+    });
+}
+
+// Called by the coordinator after a promotion (and when it discovers who the primary is).
+void Router::set_shard_primary(const std::string& shard, const std::string& host, int port) {
+    update_route([&](Route& r) {
+        auto it = r.nodes.find(shard);
+        if (it != r.nodes.end()) { it->second.host = host; it->second.port = port; }
+    });
+}
 
 // ---- one client connection ----------------------------------------------------------------------
 
@@ -160,6 +188,11 @@ private:
     // 0: answered locally (`local` holds the reply)   1: forward by key   2: needs several nodes
     enum Kind { kLocal = 0, kKey = 1, kBarrier = 2 };
 
+    static bool shard_available(const Route& route, const std::string& shard) {
+        auto it = route.nodes.find(shard);
+        return it == route.nodes.end() || it->second.available;
+    }
+
     static Kind classify(const std::string& name, const Cmd& c, std::string* local, const std::string** key) {
         auto need = [&](bool ok) { if (!ok) *local = wrong_args(name); return ok; };
         if (name == "PING") {
@@ -190,7 +223,7 @@ private:
             if (c.size() == 2) { *key = &c[1]; return kKey; }
             return kBarrier;
         }
-        if (name == "DBSIZE" || name == "KEYS" || name == "INFO" || name == "SAVE" || name == "RING") return kBarrier;
+        if (name == "DBSIZE" || name == "KEYS" || name == "INFO" || name == "SAVE" || name == "RING" || name == "SHARD") return kBarrier;
         *local = resp_error("ERR unknown command '" + c[0] + "'");
         return kLocal;
     }
@@ -300,6 +333,10 @@ private:
                 case kKey: {
                     const std::string* owner = route.ring->lookup(*key);
                     if (!owner) { items.push_back({false, "", no_nodes()}); break; }
+                    if (route.any_replicated && !shard_available(route, *owner)) {
+                        items.push_back({false, "", shard_unavailable(*owner)});
+                        break;
+                    }
                     sendbuf[*owner] += encode_command(c);
                     items.push_back({true, *owner, ""});
                     r_.forwarded_.fetch_add(1, std::memory_order_relaxed);
@@ -321,6 +358,11 @@ private:
     std::string key_command(const Route& route, const std::string& name, const Cmd& c, const std::string& key) {
         const std::string* now = route.ring->lookup(key);
         if (!now) return no_nodes();
+        if (route.any_replicated) {  // during a migration the old owner matters too
+            if (!shard_available(route, *now)) return shard_unavailable(*now);
+            const std::string* was = route.old_ring ? route.old_ring->lookup(key) : nullptr;
+            if (was && !shard_available(route, *was)) return shard_unavailable(*was);
+        }
         const std::string* before = route.old_ring ? route.old_ring->lookup(key) : nullptr;
         if (!before || *before == *now) return forward(route, *now, c);  // not affected by the move
 
@@ -364,6 +406,7 @@ private:
             if (route.nodes.empty()) return no_nodes();
             long long total = 0;
             for (const auto& kv : route.nodes) {
+                if (!kv.second.available) return shard_unavailable(kv.first);
                 std::string r = forward(route, kv.first, c);
                 long long v = 0;
                 if (!parse_integer_reply(r, &v)) return r;
@@ -407,6 +450,19 @@ private:
                 total += v;
             }
             return resp_integer(total);
+        }
+        if (name == "SHARD") {  // SHARD STATUS | SHARD EVENTS  (the failover coordinator's view)
+            if (c.size() != 2) return wrong_args(name);
+            Coordinator* co = r_.coordinator();
+            if (!co) return resp_error("ERR no replicated shards are configured");
+            const std::string sub = upper(c[1]);
+            if (sub == "STATUS") return resp_bulk(co->status_text());
+            if (sub == "EVENTS") {
+                std::string out;
+                for (const auto& e : co->events()) out += e + "\r\n";
+                return resp_bulk(out);
+            }
+            return resp_error("ERR unknown SHARD subcommand");
         }
         if (name == "RING") {
             if (c.size() < 2) return wrong_args(name);
@@ -472,7 +528,26 @@ Router::Router(std::vector<RouterNode> nodes, RouterOptions opts) : opts_(opts) 
     }
     r->ring = std::make_shared<HashRing>(std::move(ring_nodes), opts_.vnodes);
     r->version = 1;
+    // Replicated shards: the coordinator owns their failure detection and failover.
+    std::vector<ShardSpec> specs;
+    for (const auto& kv : r->nodes) {
+        const RouterNode& n = kv.second;
+        if (n.replicas.empty()) continue;
+        ShardSpec sp;
+        sp.shard = n.name;
+        sp.members.push_back({n.name + "#0", n.host, n.port});
+        for (size_t i = 0; i < n.replicas.size(); ++i)
+            sp.members.push_back({n.name + "#" + std::to_string(i + 1), n.replicas[i].host, n.replicas[i].port});
+        specs.push_back(std::move(sp));
+    }
+    for (const auto& sp : specs) r->nodes[sp.shard].available = false;  // fail closed until the coordinator confirms the shard
+    r->any_replicated = !specs.empty();
     route_ = std::move(r);
+    if (!specs.empty())
+        coordinator_ = std::make_unique<Coordinator>(
+            std::move(specs), opts_.failover,
+            [this](const std::string& s, const std::string& h, int p) { set_shard_primary(s, h, p); },
+            [this](const std::string& s, bool a) { set_shard_available(s, a); });
 }
 
 Router::~Router() { stop(); }
@@ -500,6 +575,7 @@ bool Router::start(std::string* error) {
     port_ = ntohs(a.sin_port);
     running_ = true;
     acceptor_ = std::thread([this] { accept_loop(); });
+    if (coordinator_) coordinator_->start();
     return true;
 }
 
@@ -548,6 +624,7 @@ void Router::stop() {
         if (listen_fd_ >= 0) { ::close(listen_fd_); listen_fd_ = -1; }
         return;
     }
+    if (coordinator_) coordinator_->stop();
     if (acceptor_.joinable()) acceptor_.join();
     if (listen_fd_ >= 0) { ::close(listen_fd_); listen_fd_ = -1; }
     std::vector<std::unique_ptr<SessionHandle>> sessions;
@@ -588,6 +665,12 @@ std::string Router::info() const {
              (it != r->nodes.end() ? it->second.host + ":" + std::to_string(it->second.port) : std::string("?")) +
              " weight=" + std::to_string(nodes[i].weight) + " share=" + buf + "\r\n";
     }
+    if (coordinator_) {
+        s += "# Shards\r\n";
+        for (const auto& sh : coordinator_->info())
+            s += "shard:" + sh.shard + " state=" + sh.state + " primary=" + sh.primary + " epoch=" + std::to_string(sh.epoch) +
+                 " failovers=" + std::to_string(sh.failovers) + "\r\n";
+    }
     return s;
 }
 
@@ -603,30 +686,22 @@ bool Router::add_node(const RouterNode& node_in, bool migrate, MigrationReport* 
     std::lock_guard<std::mutex> admin(admin_mu_);
     auto cur = route();
     if (cur->ring->contains(node.name)) return fail("node '" + node.name + "' is already in the ring");
+    auto new_ring = std::make_shared<HashRing>(cur->ring->with_node({node.name, node.weight}));
 
-    auto next = std::make_shared<Route>();
-    next->ring = std::make_shared<HashRing>(cur->ring->with_node({node.name, node.weight}));
-    next->nodes = cur->nodes;
-    next->nodes[node.name] = node;
-    next->version = cur->version + 1;
     if (!migrate || cur->ring->empty()) {
-        publish(next);
+        update_route([&](Route& r) { r.ring = new_ring; r.nodes[node.name] = node; });
         return true;
     }
     // 1. publish "migrating" and wait for every unlocked batch that started earlier to finish
-    next->old_ring = cur->ring;
-    publish(next);
+    update_route([&](Route& r) { r.old_ring = r.ring; r.ring = new_ring; r.nodes[node.name] = node; });
     while (fast_inflight_.load() != 0) std::this_thread::sleep_for(std::chrono::microseconds(100));
     // 2. copy keys. Every old node may lose keys to the new one.
     std::vector<std::string> sources;
     for (const auto& n : cur->ring->nodes()) sources.push_back(n.name);
-    MigrationReport rep = migrate_keys(*next, sources);
+    MigrationReport rep = migrate_keys(*route(), sources);
     if (report) *report = rep;
     // 3. migration over: only the new ring from now on
-    auto done = std::make_shared<Route>(*next);
-    done->old_ring.reset();
-    done->version = next->version + 1;
-    publish(done);
+    update_route([&](Route& r) { r.old_ring.reset(); });
     return true;
 }
 
@@ -639,26 +714,18 @@ bool Router::remove_node(const std::string& name, bool migrate, MigrationReport*
     auto cur = route();
     if (!cur->ring->contains(name)) return fail("no such node '" + name + "'");
     if (migrate && cur->ring->node_count() == 1) return fail("cannot migrate the last node's keys anywhere");
+    auto new_ring = std::make_shared<HashRing>(cur->ring->without_node(name));
 
-    auto next = std::make_shared<Route>();
-    next->ring = std::make_shared<HashRing>(cur->ring->without_node(name));
-    next->nodes = cur->nodes;  // keep the leaving node reachable while its keys are copied out
-    next->version = cur->version + 1;
     if (!migrate) {
-        next->nodes.erase(name);
-        publish(next);
+        update_route([&](Route& r) { r.ring = new_ring; r.nodes.erase(name); });
         return true;
     }
-    next->old_ring = cur->ring;
-    publish(next);
+    // the leaving node stays reachable (in r.nodes) while its keys are copied out
+    update_route([&](Route& r) { r.old_ring = r.ring; r.ring = new_ring; });
     while (fast_inflight_.load() != 0) std::this_thread::sleep_for(std::chrono::microseconds(100));
-    MigrationReport rep = migrate_keys(*next, {name});
+    MigrationReport rep = migrate_keys(*route(), {name});
     if (report) *report = rep;
-    auto done = std::make_shared<Route>(*next);
-    done->old_ring.reset();
-    done->nodes.erase(name);
-    done->version = next->version + 1;
-    publish(done);
+    update_route([&](Route& r) { r.old_ring.reset(); r.nodes.erase(name); });
     return true;
 }
 
@@ -690,8 +757,9 @@ MigrationReport Router::migrate_keys(const Route& route, const std::vector<std::
         auto& p = conns[name];
         if (!p) p = std::make_unique<RespConn>();
         if (!p->is_open()) {
-            auto it = route.nodes.find(name);
-            if (it == route.nodes.end()) return nullptr;
+            auto latest = this->route();  // not the snapshot we started from: a failover may have moved the primary
+            auto it = latest->nodes.find(name);
+            if (it == latest->nodes.end()) return nullptr;
             std::string why;
             if (!p->connect(it->second.host, it->second.port, opts_.io_timeout_ms, &why)) return nullptr;
         }
