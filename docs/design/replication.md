@@ -219,14 +219,19 @@ Request: the replica connects to the primary's replication port and sends
 
 * **Choice**: the eligible replica with the highest applied offset (ties: lowest name). Eligible =
   ONLINE on the failed primary's lineage, reachable, and the quorum rule of section 1 satisfied
-  (under async: at least one eligible replica and, optionally, lag below `--failover-max-lag`).
+  (under async: at least one eligible replica; no lag threshold is enforced).
 * **Promotion**: router sends `PROMOTE <new_epoch>`; the node becomes PRIMARY with a new
   replid, keeps its log (offsets continue), and starts accepting the other replicas. The router
   then points the remaining replicas at it (`REPLICAOF`); replicas whose applied offset is
   within the new primary's history continue by partial resync, a replica that is *ahead* of it
   (it applied records the new primary lacks) does a full resync and thereby discards that suffix.
-* **No safe replica**: the shard refuses writes (`-ERR shard unavailable`), reads continue from
-  replicas that are ONLINE. Nothing is promoted on a guess.
+* **No safe replica**: as implemented, the shard is marked unavailable and the router refuses
+  BOTH reads and writes for its keys (fail closed: with an ambiguous state even a read could be
+  stale). Nothing is promoted on a guess.
+* **Highest epoch is durable** (`--state-file`): a restarted router refuses to adopt a member
+  whose epoch is older than the highest it ever saw, so it cannot re-crown a stale primary when
+  the newer ones are unreachable. Without the file it learns epochs from the nodes and waits out
+  any lease its previous incarnation may have granted.
 * **Old primary returns**: it carries a lower epoch. On first contact with the router (or with any
   node reporting a higher epoch) it demotes itself to replica and **always full-resyncs**, so its
   possibly divergent suffix is discarded: data never flows from an old primary to a newer one.
