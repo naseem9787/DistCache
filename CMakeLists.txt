@@ -60,6 +60,6 @@ find_package(GTest REQUIRED)
 add_executable(distcache_tests
   tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp
   tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp
-  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp tests/test_node_replication.cpp tests/test_sync_replication.cpp)
+  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp tests/test_node_replication.cpp tests/test_sync_replication.cpp tests/test_failover_node.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)

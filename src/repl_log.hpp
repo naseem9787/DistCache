@@ -59,6 +59,17 @@ public:
     static std::string new_replid();
     std::string replid() const;
     void reset(std::string replid, uint64_t last_offset);
+    // Promotion: keep every record and the offset numbering, but start a new lineage id. The old
+    // lineage and the offset at which it ended are remembered, so a replica that followed the old
+    // primary up to some offset <= that point can continue WITHOUT a full resync (previous_lineage).
+    void promote_lineage(std::string new_replid);
+    // A replica adopting the primary's (new) lineage id after a partial resync across a promotion.
+    void set_replid(std::string replid);
+    struct Lineage {
+        std::string id;        // empty if there was no promotion
+        uint64_t end_offset = 0;
+    };
+    Lineage previous_lineage() const;
 
     uint64_t last_offset() const { return last_.load(std::memory_order_acquire); }
     // The offset of the calling thread's most recent LOCAL append (observer callback), cleared on
@@ -101,6 +112,7 @@ private:
     std::condition_variable cv_;
     std::deque<ReplRecord> q_;
     std::string replid_;
+    Lineage prev_;
     size_t bytes_ = 0;
     uint64_t appended_ = 0, trimmed_ = 0;
     int waiters_ = 0;

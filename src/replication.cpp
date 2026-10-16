@@ -236,14 +236,26 @@ void ReplicationPrimary::serve(std::shared_ptr<Link> link) {
     const std::string their_id = req.array[1].str;
     const uint64_t next = std::strtoull(req.array[2].str.c_str(), nullptr, 10);
     link->rid = req.array[4].str;
+    const int64_t their_epoch = std::strtoll(req.array[3].str.c_str(), nullptr, 10);
+    if (their_epoch > epoch_.load()) {
+        // The replica has already seen a newer epoch: some other node was promoted. We are stale.
+        send_fd(link->fd, "-ERR STALEPRIMARY this node's epoch " + std::to_string(epoch_.load()) + " is older than " +
+                              std::to_string(their_epoch) + "\r\n");
+        if (stale_cb_) stale_cb_(their_epoch);
+        return finish();
+    }
     const std::string myid = log_.replid();
     const int64_t epoch = epoch_.load();
 
     // Partial resync only if the replica is on THIS lineage and its next record is still retained
     // (or it is exactly caught up). Anything else, including a replica claiming to be ahead, gets
     // a full resync.
+    // A replica of the PREVIOUS lineage (before this node was promoted) may continue if it is not
+    // ahead of the point where that lineage ended: everything it has is a prefix of ours.
+    const ReplicationLog::Lineage prev = log_.previous_lineage();
+    const bool lineage_ok = their_id == myid || (!prev.id.empty() && their_id == prev.id && next - 1 <= prev.end_offset);
     bool partial = false;
-    if (their_id == myid && next >= 1) {
+    if (lineage_ok && next >= 1) {
         std::vector<ReplRecord> probe;
         partial = log_.read_from(next, 1, &probe) == ReplicationLog::ReadStatus::Ok;
     }
@@ -442,16 +454,22 @@ bool ReplicationReplica::session() {
         ~FdGuard() { std::lock_guard<std::mutex> g(r.mu_); r.cur_fd_ = -1; }
     } guard{*this};
 
-    if (!rc.send_all(encode_command({"SYNC", log_.replid(), std::to_string(log_.last_offset() + 1), std::to_string(epoch_), rid_})))
+    if (!rc.send_all(encode_command({"SYNC", log_.replid(), std::to_string(log_.last_offset() + 1), std::to_string(epoch_.load()), rid_})))
         return false;
     Reply h;
     if (!rc.read_reply(h) || h.type != '*' || h.array.size() < 4) return false;  // includes an -ERR line
     const std::string kind = h.array[0].str;
     const std::string their_id = h.array[1].str;
+    if (std::strtoll(h.array[2].str.c_str(), nullptr, 10) < epoch_.load()) {  // a primary older than what we know
+        ++refused_stale_;
+        return false;
+    }
     uint64_t primary_offset = 0;
 
     if (kind == "CONTINUE") {
-        if (their_id != log_.replid()) return false;  // protocol violation
+        // The primary decided we may continue; it may have been promoted since we last synced, in
+        // which case it announces its new lineage id and we adopt it (our records are a prefix).
+        if (their_id != log_.replid()) log_.set_replid(their_id);
         primary_offset = std::strtoull(h.array[3].str.c_str(), nullptr, 10);
         readable_ = true;
         std::lock_guard<std::mutex> g(mu_);

@@ -45,8 +45,25 @@ std::string ReplicationLog::replid() const {
     return replid_;
 }
 
+void ReplicationLog::promote_lineage(std::string new_replid) {
+    std::lock_guard<std::mutex> lock(mu_);
+    prev_ = Lineage{replid_, last_.load(std::memory_order_relaxed)};
+    replid_ = std::move(new_replid);
+}
+
+void ReplicationLog::set_replid(std::string replid) {
+    std::lock_guard<std::mutex> lock(mu_);
+    replid_ = std::move(replid);
+}
+
+ReplicationLog::Lineage ReplicationLog::previous_lineage() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return prev_;
+}
+
 void ReplicationLog::reset(std::string replid, uint64_t last_offset) {
     std::lock_guard<std::mutex> lock(mu_);
+    prev_ = Lineage{};
     q_.clear();
     bytes_ = 0;
     replid_ = std::move(replid);

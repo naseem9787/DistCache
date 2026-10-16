@@ -35,6 +35,11 @@ public:
     // so a node without replication pays nothing. A write is refused on a replica; any command
     // that reads the keyspace is refused while a replica is still loading its snapshot.
     // On refusal *error holds the full error text ("READONLY ...", "LOADING ...").
+    // Replication control plane (ROLE, LEASE, PROMOTE, REPLICAOF): *handled = false if the command
+    // is not one of theirs. release_ok(): may a held reply be released now (lease still valid)?
+    virtual std::string control(const std::vector<std::string>& args, bool* handled) { (void)args; *handled = false; return ""; }
+    virtual bool release_ok() { return true; }
+
     virtual bool gates_commands() const { return false; }
     virtual bool write_allowed(std::string* error) { (void)error; return true; }
     virtual bool read_allowed(std::string* error) { (void)error; return true; }

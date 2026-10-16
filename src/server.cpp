@@ -204,6 +204,13 @@ private:
                 if (!have_acked) { acked = hooks_ ? hooks_->repl_acked() : UINT64_MAX; have_acked = true; }
                 if (h.repl > acked) break;
             }
+            if (hooks_ && !hooks_->release_ok()) {
+                // The write may be durable / replicated, but the node's authority to acknowledge it has
+                // lapsed (its lease expired, or it was fenced). Do not send +OK: expire the batch so the
+                // connection is closed and the client treats the outcome as unknown.
+                c.held.front().deadline_ms = 1;
+                break;
+            }
             c.out += h.bytes;
             c.held.pop_front();
         }
@@ -217,7 +224,7 @@ private:
             if (it == conns_.end()) { waiting_.erase(fd); continue; }
             settle(fd, it->second);
             const Conn& c = it->second;
-            if (!c.held.empty() && c.held.front().deadline_ms != 0 && Store::real_now_ms() > c.held.front().deadline_ms) {
+            if (!c.held.empty() && c.held.front().deadline_ms != 0 && Store::real_now_ms() > c.held.front().deadline_ms) {  // also set by settle() when release_ok() fails
                 close_conn(fd);  // replicas did not acknowledge in time: drop the replies, the client sees EOF
                 continue;
             }

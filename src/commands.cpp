@@ -158,6 +158,11 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
         std::string err;
         return hooks->save(&err) ? resp_simple("OK") : resp_error("ERR " + err);
     }
+    if (hooks) {  // node control commands (ROLE / LEASE / PROMOTE / REPLICAOF) when replication is enabled
+        bool handled = false;
+        std::string r = hooks->control(args, &handled);
+        if (handled) return r;
+    }
     if (cmd == "COMMAND") {
         return "*0\r\n";  // redis-cli asks for this on startup; an empty list is fine
     }

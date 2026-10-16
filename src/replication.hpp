@@ -70,6 +70,10 @@ public:
     void set_epoch(int64_t e) { epoch_.store(e); }
     // Called (from a replication thread) every time a replica's ACK arrives. Set before start().
     void set_ack_callback(std::function<void()> cb) { ack_cb_ = std::move(cb); }
+    // Called when a replica connects that has seen a HIGHER epoch than this primary: a newer
+    // primary exists, so this one is stale. The connection is refused and the callback lets the
+    // node fence itself. Set before start().
+    void set_stale_callback(std::function<void(int64_t)> cb) { stale_cb_ = std::move(cb); }
 
     // The replicas that currently count for synchronous replication: distinct replica ids (a
     // replica that reconnected may still have an old link open; it counts once, with its best
@@ -114,6 +118,7 @@ private:
     std::atomic<int64_t> epoch_{0};
     std::atomic<uint64_t> kill_generation_{0};
     std::function<void()> ack_cb_;
+    std::function<void(int64_t)> stale_cb_;
     ReplFaults faults_;
     std::thread acceptor_;
 
@@ -163,6 +168,8 @@ public:
     bool readable() const { return readable_.load(std::memory_order_acquire); }
 
     // Fault injection / test control.
+    void set_epoch(int64_t e) { epoch_.store(e); }  // the highest epoch this node has seen
+    uint64_t refused_stale_primary() const { return refused_stale_.load(); }
     void set_apply_paused(bool paused) { paused_ = paused; }       // stop reading: the link backs up
     void set_reconnect_hold(bool hold) { hold_reconnect_ = hold; } // do not reconnect while true
     void drop_link();                                              // close the current connection now
@@ -186,5 +193,6 @@ private:
     std::string rid_;
     mutable std::mutex mu_;  // guards status_ and replid
     Status status_;
-    int64_t epoch_ = 0;
+    std::atomic<int64_t> epoch_{0};
+    std::atomic<uint64_t> refused_stale_{0};
 };
