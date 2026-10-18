@@ -103,9 +103,9 @@ public:
 private:
     static constexpr size_t kRecordOverhead = 48;  // deque node + string header, counted against the budget
 
-    // `evicted` receives the payloads trimmed off the front, so the caller can free them AFTER releasing
-    // the mutex (free() under the mutex lengthens the critical section that every writer queues on).
-    uint64_t push_locked(std::string payload, uint64_t offset, std::vector<std::string>* evicted = nullptr);
+    // NOTE: trimmed payloads are freed here, under the mutex. Freeing them after unlocking was tried in Phase 10
+    // and reverted: +14 % writer throughput without replicas, but ~10x more replica lag (docs/benchmarks/final/repl-log-ab.txt).
+    uint64_t push_locked(std::string payload, uint64_t offset);
     void append_local(std::string payload);
     int64_t wall() const { return opts_.wall_ms(); }
 

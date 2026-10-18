@@ -1,0 +1,15 @@
+# A/B of the one replication-log change tried in Phase 10: free the payloads trimmed off the log AFTER releasing
+# the log mutex (NEW) versus under it (OLD, the Phase 8 behaviour). Async, 1 replica, SET only, pipeline 16,
+# 50 clients, no replica readers, 15 s runs, primary-side lag sampled every 200 ms; run back to back, same session.
+# Result: NEW raises writer throughput only without replicas (+14 %) but makes the replica lag ~10x larger
+# (the faster writers starve the sender thread of the mutex), and lag is the tail an async failover loses.
+# The change was therefore REVERTED. The final-session benchmark that was run with NEW is kept in
+# replication-with-eviction-change/.
+NEW  rep1: writers 601,440 req/s, lag median 41,709 p99 50,164 cuts 0
+NEW  rep2: writers 616,628 req/s, lag median 37,356 p99 46,098 cuts 0
+NEW  rep3: writers 608,884 req/s, lag median 42,690 p99 53,105 cuts 0
+NEW  rep4: writers 597,684 req/s, lag median 41,526 p99 56,310 cuts 0
+OLD  rep1: writers 588,344 req/s, lag median  6,449 p99 16,848 cuts 0
+OLD  rep2: writers 590,634 req/s, lag median 17,159 p99 23,730 cuts 0
+OLD  rep3: writers 598,978 req/s, lag median  1,384 p99 18,548 cuts 0
+OLD  rep4: writers 598,806 req/s, lag median  1,184 p99 20,577 cuts 0
