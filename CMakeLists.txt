@@ -36,6 +36,8 @@ add_executable(bench_lru_accuracy bench/bench_lru_accuracy.cpp)
 target_link_libraries(bench_lru_accuracy distcache_core)
 add_executable(bench_wal bench/bench_wal.cpp)  # production code only: measures the normal build
 target_link_libraries(bench_wal distcache_core)
+add_executable(bench_repl_log bench/bench_repl_log.cpp)  # replication log alone: single-thread cost vs contention
+target_link_libraries(bench_repl_log distcache_core)
 
 # Diagnostics build: nanosecond timers around each step of a logged write and an in-process
 # sampling profiler. Separate target so the production server has none of it. Use it to ATTRIBUTE
@@ -60,6 +62,6 @@ find_package(GTest REQUIRED)
 add_executable(distcache_tests
   tests/test_resp.cpp tests/test_commands.cpp tests/test_store.cpp tests/test_lru.cpp
   tests/test_concurrency.cpp tests/test_server.cpp tests/test_wal.cpp tests/test_persistence.cpp
-  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp tests/test_node_replication.cpp tests/test_sync_replication.cpp tests/test_failover_node.cpp tests/test_failover_router.cpp tests/test_failover_e2e.cpp tests/test_rate_limiter.cpp tests/test_rate_limiter_cluster.cpp)
+  tests/test_deferred.cpp tests/test_ring.cpp tests/test_router.cpp tests/test_repl_log.cpp tests/test_replication.cpp tests/test_node_replication.cpp tests/test_sync_replication.cpp tests/test_failover_node.cpp tests/test_failover_router.cpp tests/test_failover_e2e.cpp tests/test_rate_limiter.cpp tests/test_rate_limiter_cluster.cpp tests/test_integration.cpp)
 target_link_libraries(distcache_tests distcache_core GTest::gtest_main)
 add_test(NAME unit COMMAND distcache_tests)

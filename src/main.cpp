@@ -17,7 +17,9 @@
 #include "diag.hpp"
 #include "node_replication.hpp"
 #include "observer_chain.hpp"
+#include "net_util.hpp"
 #include "persistence.hpp"
+#include "version.hpp"
 #include "server.hpp"
 #include "store.hpp"
 #include "synced_store.hpp"
@@ -31,6 +33,8 @@ void usage() {
     std::puts(
         "usage: distcache [options]\n"
         "  --port N        listen port (default 6380)\n"
+        "  --bind ADDR     IPv4 address for the client and replication ports (default 127.0.0.1;\n"
+        "                  use 0.0.0.0 to accept other machines; there is NO authentication)\n"
         "  --threads N     worker threads (default 4; forced to 1 in single mode)\n"
         "  --mode M        single | global | sharded   (default sharded)\n"
         "                    single  : one thread, no locks (baseline)\n"
@@ -57,6 +61,8 @@ void usage() {
 
 int main(int argc, char** argv) {
     int port = 6380, threads = 4;
+    std::string bind_addr = "127.0.0.1";
+    long long iv = 0;
     size_t shards = 64, max_keys = 0;
     std::string mode = "sharded";
     std::string dir;
@@ -71,24 +77,26 @@ int main(int argc, char** argv) {
             if (i + 1 >= argc) { std::fprintf(stderr, "missing value for %s\n", a.c_str()); std::exit(2); }
             return argv[++i];
         };
-        if (a == "--port") port = std::atoi(next());
-        else if (a == "--threads") threads = std::atoi(next());
+        if (a == "--port") { if (!parse_int_arg("--port", next(), 0, 65535, &iv)) return 2; port = static_cast<int>(iv); }
+        else if (a == "--bind") { bind_addr = next(); in_addr_t tmp; if (!parse_bind_address(bind_addr, &tmp)) { std::fprintf(stderr, "--bind wants an IPv4 address, got '%s'\n", bind_addr.c_str()); return 2; } }
+        else if (a == "--threads") { if (!parse_int_arg("--threads", next(), 1, 256, &iv)) return 2; threads = static_cast<int>(iv); }
         else if (a == "--mode") mode = next();
-        else if (a == "--shards") shards = static_cast<size_t>(std::atoll(next()));
-        else if (a == "--max-keys") max_keys = static_cast<size_t>(std::atoll(next()));
+        else if (a == "--shards") { if (!parse_int_arg("--shards", next(), 1, 65536, &iv)) return 2; shards = static_cast<size_t>(iv); }
+        else if (a == "--max-keys") { if (!parse_int_arg("--max-keys", next(), 0, 1LL << 40, &iv)) return 2; max_keys = static_cast<size_t>(iv); }
         else if (a == "--dir") dir = next();
-        else if (a == "--snapshot-mb") snapshot_mb = static_cast<uint64_t>(std::atoll(next()));
-        else if (a == "--repl-port") { ro.repl_port = std::atoi(next()); want_repl = true; }
+        else if (a == "--snapshot-mb") { if (!parse_int_arg("--snapshot-mb", next(), 0, 1LL << 20, &iv)) return 2; snapshot_mb = static_cast<uint64_t>(iv); }
+        else if (a == "--repl-port") { if (!parse_int_arg("--repl-port", next(), 0, 65535, &iv)) return 2; ro.repl_port = static_cast<int>(iv); want_repl = true; }
         else if (a == "--repl-require-lease") ro.require_lease = true;
-        else if (a == "--repl-sync") ro.sync_replicas = std::atoi(next());
-        else if (a == "--repl-sync-timeout-ms") ro.sync_timeout_ms = std::atoi(next());
-        else if (a == "--repl-backlog-mb") ro.backlog_bytes = static_cast<size_t>(std::atoll(next())) << 20;
+        else if (a == "--repl-sync") { if (!parse_int_arg("--repl-sync", next(), 0, 16, &iv)) return 2; ro.sync_replicas = static_cast<int>(iv); }
+        else if (a == "--repl-sync-timeout-ms") { if (!parse_int_arg("--repl-sync-timeout-ms", next(), 1, 3600000, &iv)) return 2; ro.sync_timeout_ms = static_cast<int>(iv); }
+        else if (a == "--repl-backlog-mb") { if (!parse_int_arg("--repl-backlog-mb", next(), 1, 1LL << 20, &iv)) return 2; ro.backlog_bytes = static_cast<size_t>(iv) << 20; }
         else if (a == "--replicaof") {
             const std::string spec = next();
             const size_t colon = spec.rfind(':');
             if (colon == std::string::npos || colon == 0) { std::fprintf(stderr, "--replicaof wants HOST:PORT\n"); return 2; }
             ro.replicaof_host = spec.substr(0, colon);
-            ro.replicaof_port = std::atoi(spec.c_str() + colon + 1);
+            if (!parse_int_arg("--replicaof port", spec.c_str() + colon + 1, 1, 65535, &iv)) return 2;
+            ro.replicaof_port = static_cast<int>(iv);
             want_repl = true;
         }
         else if (a == "--fsync") {
@@ -103,6 +111,8 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); usage(); return 2; }
     }
 
+    ro.repl_bind = bind_addr;
+    if (!dir.empty()) ro.epoch_file = dir + "/primary.epoch";
     std::unique_ptr<Engine> engine;
     if (mode == "single") {
         if (threads != 1) std::fprintf(stderr, "note: single mode is unsynchronized, using 1 worker thread\n");
@@ -185,16 +195,19 @@ int main(int argc, char** argv) {
             std::printf("replication primary, replication port %d\n", repl->repl_port());
     }
 
-    Server server(*engine, ServerOptions{port, threads, hooks});
+    Server server(*engine, ServerOptions{port, threads, hooks, bind_addr});
     if (!server.start(&err)) { std::fprintf(stderr, "failed to start: %s\n", err.c_str()); return 1; }
-    std::printf("distcache listening on port %d (mode=%s, workers=%d, shards=%zu, max_keys=%zu)\n",
-                server.port(), engine->mode(), std::max(1, threads), engine->shards(), engine->max_keys());
+    std::printf("distcache %s listening on %s:%d (mode=%s, workers=%d, shards=%zu, max_keys=%zu)\n", DISTCACHE_VERSION,
+                bind_addr.c_str(), server.port(), engine->mode(), std::max(1, threads), engine->shards(), engine->max_keys());
     std::fflush(stdout);
 
     while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::printf("signal received, shutting down\n");
+    std::fflush(stdout);
     server.stop();                         // stop accepting and serving first...
     if (repl) repl->stop();
     if (persistence) persistence->close(); // ...then flush and fsync the log
+    std::printf("stopped cleanly\n");
 #ifdef DISTCACHE_DIAGNOSTICS
     diag::profiler_stop();
 #endif

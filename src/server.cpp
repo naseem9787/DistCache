@@ -1,3 +1,4 @@
+#include "net_util.hpp"
 #include "server.hpp"
 
 #include <arpa/inet.h>
@@ -311,7 +312,10 @@ bool Server::start(std::string* error) {
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<uint16_t>(opts_.port));
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (!parse_bind_address(opts_.bind, &addr.sin_addr.s_addr)) {
+        errno = EINVAL;
+        return fail("bind address '" + opts_.bind + "'");
+    }
     if (bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) return fail("bind");
     if (listen(listen_fd_, 511) < 0) return fail("listen");
     socklen_t len = sizeof addr;

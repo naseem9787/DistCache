@@ -1,3 +1,8 @@
+#include <chrono>
+#include <unistd.h>
+
+#include "net_util.hpp"
+#include "version.hpp"
 #include "router.hpp"
 
 #include <arpa/inet.h>
@@ -236,7 +241,7 @@ private:
     static bool is_admin_mutation(const Cmd& c) {
         if (c.size() < 2 || upper(c[0]) != "RING") return false;
         const std::string sub = upper(c[1]);
-        return sub == "ADD" || sub == "REMOVE";
+        return sub == "ADD" || sub == "REMOVE" || sub == "RESUME" || sub == "ABORT";
     }
 
     // -- the batch driver -------------------------------------------------------------------
@@ -497,7 +502,13 @@ private:
         MigrationReport rep;
         std::string err;
         bool ok;
-        if (sub == "ADD") {
+        if (sub == "RESUME" || sub == "ABORT") {
+            if (c.size() != 2) return wrong_args("ring " + sub);
+            if (sub == "ABORT") return r_.abort_migration(&err) ? resp_simple("OK") : resp_error("ERR " + err);
+            if (!r_.resume_migration(&rep, &err)) return resp_error("ERR " + err);
+            migrate = true;
+            ok = true;
+        } else if (sub == "ADD") {
             if (c.size() < 5 || c.size() > 7) return wrong_args("ring add");
             RouterNode n;
             n.name = c[2];
@@ -520,7 +531,8 @@ private:
         if (!migrate) return resp_simple("OK");
         return resp_simple("OK scanned=" + std::to_string(rep.scanned) + " moved=" + std::to_string(rep.moved) +
                            " superseded=" + std::to_string(rep.superseded) + " vanished=" + std::to_string(rep.vanished) +
-                           " errors=" + std::to_string(rep.errors));
+                           " errors=" + std::to_string(rep.errors) +
+                           (r_.migration_pending() ? " PENDING: some keys were not moved; run RING RESUME" : ""));
     }
 
     Router& r_;
@@ -529,6 +541,8 @@ private:
 };
 
 // ---- Router -------------------------------------------------------------------------------------
+
+namespace { const auto g_router_started = std::chrono::steady_clock::now(); }
 
 Router::Router(std::vector<RouterNode> nodes, RouterOptions opts) : opts_(opts) {
     auto r = std::make_shared<Route>();
@@ -578,7 +592,7 @@ bool Router::start(std::string* error) {
     setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     sockaddr_in a{};
     a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (!parse_bind_address(opts_.bind, &a.sin_addr.s_addr)) return fail("bad bind address '" + opts_.bind + "'");
     a.sin_port = htons(static_cast<uint16_t>(opts_.port));
     if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0)
         return fail(std::string("bind: ") + std::strerror(errno));
@@ -661,8 +675,11 @@ std::string Router::owner_of(const std::string& key) const {
 
 std::string Router::info() const {
     auto r = route();
-    std::string s = "# Router\r\nring_version:" + std::to_string(r->version) +
+    const auto up = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_router_started).count();
+    std::string s = std::string("# Server\r\ndistcache_version:" DISTCACHE_VERSION "\r\nprocess_id:") + std::to_string(getpid()) +
+                    "\r\nuptime_seconds:" + std::to_string(up) + "\r\n# Router\r\nring_version:" + std::to_string(r->version) +
                     "\r\nmigrating:" + (r->old_ring ? "yes" : "no") +
+                    "\r\nmigration_pending:" + (migration_pending_ ? "yes" : "no") +
                     "\r\nvnodes_per_weight:" + std::to_string(r->ring->vnodes_per_weight()) +
                     "\r\nring_points:" + std::to_string(r->ring->point_count()) +
                     "\r\nnodes:" + std::to_string(r->ring->node_count()) +
@@ -697,6 +714,7 @@ bool Router::add_node(const RouterNode& node_in, bool migrate, MigrationReport* 
     if (node.name.empty() || node.host.empty() || node.port <= 0 || node.port > 65535)
         return fail("invalid node (need name, host and port)");
     std::lock_guard<std::mutex> admin(admin_mu_);
+    if (migration_pending_) return fail("a migration is pending: RING RESUME (or RING ABORT) first");
     auto cur = route();
     if (cur->ring->contains(node.name)) return fail("node '" + node.name + "' is already in the ring");
     auto new_ring = std::make_shared<HashRing>(cur->ring->with_node({node.name, node.weight}));
@@ -713,6 +731,12 @@ bool Router::add_node(const RouterNode& node_in, bool migrate, MigrationReport* 
     for (const auto& n : cur->ring->nodes()) sources.push_back(n.name);
     MigrationReport rep = migrate_keys(*route(), sources);
     if (report) *report = rep;
+    if (rep.errors > 0) {  // keep the migrating route so reads still fall back to the old owners
+        pending_sources_ = sources;
+        pending_leaving_.clear();
+        migration_pending_ = true;
+        return true;
+    }
     // 3. migration over: only the new ring from now on
     update_route([&](Route& r) { r.old_ring.reset(); });
     return true;
@@ -724,6 +748,7 @@ bool Router::remove_node(const std::string& name, bool migrate, MigrationReport*
         return false;
     };
     std::lock_guard<std::mutex> admin(admin_mu_);
+    if (migration_pending_) return fail("a migration is pending: RING RESUME (or RING ABORT) first");
     auto cur = route();
     if (!cur->ring->contains(name)) return fail("no such node '" + name + "'");
     if (migrate && cur->ring->node_count() == 1) return fail("cannot migrate the last node's keys anywhere");
@@ -738,7 +763,40 @@ bool Router::remove_node(const std::string& name, bool migrate, MigrationReport*
     while (fast_inflight_.load() != 0) std::this_thread::sleep_for(std::chrono::microseconds(100));
     MigrationReport rep = migrate_keys(*route(), {name});
     if (report) *report = rep;
+    if (rep.errors > 0) {  // the leaving node stays reachable until its keys are all out
+        pending_sources_ = {name};
+        pending_leaving_ = name;
+        migration_pending_ = true;
+        return true;
+    }
     update_route([&](Route& r) { r.old_ring.reset(); r.nodes.erase(name); });
+    return true;
+}
+
+bool Router::resume_migration(MigrationReport* report, std::string* error) {
+    std::lock_guard<std::mutex> admin(admin_mu_);
+    if (!migration_pending_) { if (error) *error = "no migration is pending"; return false; }
+    // the migrating route is still published; clients are already using the slow, key-locked path
+    MigrationReport rep = migrate_keys(*route(), pending_sources_);
+    if (report) *report = rep;
+    if (rep.errors == 0) {
+        const std::string leaving = pending_leaving_;
+        update_route([&](Route& r) { r.old_ring.reset(); if (!leaving.empty()) r.nodes.erase(leaving); });
+        migration_pending_ = false;
+        pending_sources_.clear();
+        pending_leaving_.clear();
+    }
+    return true;
+}
+
+bool Router::abort_migration(std::string* error) {
+    std::lock_guard<std::mutex> admin(admin_mu_);
+    if (!migration_pending_) { if (error) *error = "no migration is pending"; return false; }
+    const std::string leaving = pending_leaving_;
+    update_route([&](Route& r) { r.old_ring.reset(); if (!leaving.empty()) r.nodes.erase(leaving); });
+    migration_pending_ = false;
+    pending_sources_.clear();
+    pending_leaving_.clear();
     return true;
 }
 

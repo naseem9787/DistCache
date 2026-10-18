@@ -6,7 +6,11 @@
 #include <optional>
 
 #include "diag.hpp"
+#include <chrono>
+#include <unistd.h>
+
 #include "glob.hpp"
+#include "version.hpp"
 #include "rate_limiter.hpp"
 #include "resp.hpp"
 
@@ -14,6 +18,8 @@ namespace {
 
 // Largest TTL we accept (~31 years in ms). Keeps now()+ttl far from int64 overflow.
 constexpr int64_t kMaxTtlMs = 1'000'000'000'000LL;
+
+const auto g_started = std::chrono::steady_clock::now();
 
 std::string upper(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); });
@@ -142,7 +148,9 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
     }
     if (cmd == "INFO") {
         const auto rl = ratelimit::counters();
-        return resp_bulk(std::string("# Concurrency\r\nmode:") + store.mode() +
+        const auto up = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_started).count();
+        return resp_bulk(std::string("# Server\r\ndistcache_version:" DISTCACHE_VERSION "\r\nprocess_id:") + std::to_string(getpid()) +
+                         "\r\nuptime_seconds:" + std::to_string(up) + "\r\n# Concurrency\r\nmode:" + store.mode() +
                          "\r\nshards:" + std::to_string(store.shards()) +
                          "\r\n# Stats\r\nkeys:" + std::to_string(store.size()) +
                          "\r\nmax_keys:" + std::to_string(store.max_keys()) +

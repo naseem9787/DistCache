@@ -103,7 +103,9 @@ public:
 private:
     static constexpr size_t kRecordOverhead = 48;  // deque node + string header, counted against the budget
 
-    uint64_t push_locked(std::string payload, uint64_t offset);
+    // `evicted` receives the payloads trimmed off the front, so the caller can free them AFTER releasing
+    // the mutex (free() under the mutex lengthens the critical section that every writer queues on).
+    uint64_t push_locked(std::string payload, uint64_t offset, std::vector<std::string>* evicted = nullptr);
     void append_local(std::string payload);
     int64_t wall() const { return opts_.wall_ms(); }
 

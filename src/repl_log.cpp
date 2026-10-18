@@ -1,8 +1,11 @@
 #include "repl_log.hpp"
 
 #include <chrono>
+
+#include "diag.hpp"
 #include <cstdio>
 #include <random>
+#include <vector>
 
 namespace {
 
@@ -77,11 +80,12 @@ uint64_t ReplicationLog::first_offset() const {
 }
 
 // Appends under the lock, trims the front to stay within budget, wakes waiters if any.
-uint64_t ReplicationLog::push_locked(std::string payload, uint64_t offset) {
+uint64_t ReplicationLog::push_locked(std::string payload, uint64_t offset, std::vector<std::string>* evicted) {
     bytes_ += payload.size() + kRecordOverhead;
     q_.push_back(ReplRecord{offset, std::move(payload)});
     while (bytes_ > opts_.max_bytes && q_.size() > 1) {  // always keep the newest record
         bytes_ -= q_.front().payload.size() + kRecordOverhead;
+        if (evicted) evicted->push_back(std::move(q_.front().payload));
         q_.pop_front();
         ++trimmed_;
     }
@@ -102,11 +106,28 @@ uint64_t ReplicationLog::take_thread_offset() {
 }
 
 void ReplicationLog::append_local(std::string payload) {
-    std::lock_guard<std::mutex> lock(mu_);
-    tl_last_offset = push_locked(std::move(payload), last_.load(std::memory_order_relaxed) + 1);
+    thread_local std::vector<std::string> evicted;   // reused: no allocation in the steady state
+#ifdef DISTCACHE_DIAGNOSTICS
+    const uint64_t t0 = diag::now_ns();
+    mu_.lock();
+    const uint64_t t1 = diag::now_ns();
+    tl_last_offset = push_locked(std::move(payload), last_.load(std::memory_order_relaxed) + 1, &evicted);
+    mu_.unlock();
+    diag::c().repl_wait.add(t1 - t0);
+    diag::c().repl_locked.add(diag::now_ns() - t1);
+#else
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        tl_last_offset = push_locked(std::move(payload), last_.load(std::memory_order_relaxed) + 1, &evicted);
+    }
+#endif
+    evicted.clear();   // the trimmed payloads are freed here, outside the mutex (the shard lock is still held)
 }
 
 void ReplicationLog::on_set(const std::string& key, const std::string& value, std::optional<int64_t> ttl_ms) {
+#ifdef DISTCACHE_DIAGNOSTICS
+    diag::Scoped encode_timer(diag::c().repl_encode);
+#endif
     std::string p;
     p.reserve(48 + key.size() + value.size());
     put_header(p, ttl_ms ? 5 : 3);

@@ -14,6 +14,8 @@
 #include <thread>
 #include <vector>
 
+#include "net_util.hpp"
+#include "version.hpp"
 #include "router.hpp"
 
 namespace {
@@ -65,6 +67,7 @@ bool parse_node(const std::string& s, RouterNode* n) {
 
 int main(int argc, char** argv) {
     RouterOptions opts;
+    opts.bind = "127.0.0.1";
     std::vector<RouterNode> nodes;
     std::vector<std::pair<std::string, RouterReplica>> pending_replicas;
     for (int i = 1; i < argc; ++i) {
@@ -73,15 +76,17 @@ int main(int argc, char** argv) {
             if (i + 1 >= argc) { std::fprintf(stderr, "missing value for %s\n", a.c_str()); std::exit(2); }
             return argv[++i];
         };
-        if (a == "--port") opts.port = std::atoi(next());
-        else if (a == "--vnodes") opts.vnodes = static_cast<uint32_t>(std::max(1, std::atoi(next())));
-        else if (a == "--timeout-ms") opts.io_timeout_ms = std::atoi(next());
-        else if (a == "--lease-ms") opts.failover.lease_ms = std::atoi(next());
-        else if (a == "--probe-ms") opts.failover.probe_ms = std::atoi(next());
-        else if (a == "--probe-timeout-ms") opts.failover.probe_timeout_ms = std::atoi(next());
-        else if (a == "--fail-after") opts.failover.fail_after = std::atoi(next());
-        else if (a == "--guard-ms") opts.failover.guard_ms = std::atoi(next());
-        else if (a == "--sync-replicas") opts.failover.sync_replicas = std::atoi(next());
+        long long iv = 0;
+        if (a == "--port") { if (!parse_int_arg("--port", next(), 0, 65535, &iv)) return 2; opts.port = static_cast<int>(iv); }
+        else if (a == "--bind") { opts.bind = next(); in_addr_t tmp; if (!parse_bind_address(opts.bind, &tmp)) { std::fprintf(stderr, "--bind wants an IPv4 address, got '%s'\n", opts.bind.c_str()); return 2; } }
+        else if (a == "--vnodes") { if (!parse_int_arg("--vnodes", next(), 1, 100000, &iv)) return 2; opts.vnodes = static_cast<uint32_t>(iv); }
+        else if (a == "--timeout-ms") { if (!parse_int_arg("--timeout-ms", next(), 1, 3600000, &iv)) return 2; opts.io_timeout_ms = static_cast<int>(iv); }
+        else if (a == "--lease-ms") { if (!parse_int_arg("--lease-ms", next(), 50, 3600000, &iv)) return 2; opts.failover.lease_ms = static_cast<int>(iv); }
+        else if (a == "--probe-ms") { if (!parse_int_arg("--probe-ms", next(), 5, 3600000, &iv)) return 2; opts.failover.probe_ms = static_cast<int>(iv); }
+        else if (a == "--probe-timeout-ms") { if (!parse_int_arg("--probe-timeout-ms", next(), 5, 3600000, &iv)) return 2; opts.failover.probe_timeout_ms = static_cast<int>(iv); }
+        else if (a == "--fail-after") { if (!parse_int_arg("--fail-after", next(), 1, 1000, &iv)) return 2; opts.failover.fail_after = static_cast<int>(iv); }
+        else if (a == "--guard-ms") { if (!parse_int_arg("--guard-ms", next(), 0, 3600000, &iv)) return 2; opts.failover.guard_ms = static_cast<int>(iv); }
+        else if (a == "--sync-replicas") { if (!parse_int_arg("--sync-replicas", next(), 0, 16, &iv)) return 2; opts.failover.sync_replicas = static_cast<int>(iv); }
         else if (a == "--state-file") opts.failover.state_file = next();
         else if (a == "--replica") {
             const std::string spec = next();
@@ -114,9 +119,12 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
     std::signal(SIGPIPE, SIG_IGN);
-    std::printf("distcache_router listening on port %d\n%s", router.port(), router.info().c_str());
+    std::printf("distcache_router %s listening on %s:%d\n%s", DISTCACHE_VERSION, opts.bind.c_str(), router.port(), router.info().c_str());
     std::fflush(stdout);
     while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::printf("signal received, shutting down\n");
+    std::fflush(stdout);
     router.stop();
+    std::printf("stopped cleanly\n");
     return 0;
 }

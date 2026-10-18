@@ -1,3 +1,7 @@
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <fstream>
 #include "node_replication.hpp"
 
 #include <algorithm>
@@ -36,12 +40,33 @@ ReplicationService::ReplicationService(Engine& engine, NodeReplicationOptions op
       gate_(&log_, /*enabled=*/opts_.replicaof_host.empty()) {
     role_ = opts_.replicaof_host.empty() ? 0 : 1;
     epoch_ = opts_.initial_epoch;
+    if (!opts_.epoch_file.empty()) {
+        std::ifstream f(opts_.epoch_file);
+        long long stored = 0;
+        if (f >> stored && stored > epoch_) epoch_ = stored;
+    }
     rid_ = opts_.replica_id.empty() ? ReplicationLog::new_replid() : opts_.replica_id;
     last_host_ = opts_.replicaof_host;
     last_port_ = opts_.replicaof_port;
 }
 
 ReplicationService::~ReplicationService() { stop(); }
+
+// write-temp, fsync, rename, fsync the directory: a crash leaves either the old or the new value
+void ReplicationService::store_epoch(int64_t e) const {
+    if (opts_.epoch_file.empty()) return;
+    const std::string tmp = opts_.epoch_file + ".tmp";
+    int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { std::fprintf(stderr, "warning: cannot store the epoch in %s\n", tmp.c_str()); return; }
+    const std::string text = std::to_string(e) + "\n";
+    bool ok = ::write(fd, text.data(), text.size()) == static_cast<ssize_t>(text.size()) && ::fsync(fd) == 0;
+    ::close(fd);
+    if (ok) ok = ::rename(tmp.c_str(), opts_.epoch_file.c_str()) == 0;
+    const size_t slash = opts_.epoch_file.rfind('/');
+    int dfd = ::open(slash == std::string::npos ? "." : opts_.epoch_file.substr(0, slash).c_str(), O_RDONLY);
+    if (dfd >= 0) { ::fsync(dfd); ::close(dfd); }
+    if (!ok) std::fprintf(stderr, "warning: cannot store the epoch in %s\n", opts_.epoch_file.c_str());
+}
 
 void ReplicationService::event(const std::string& msg) const {
     if (opts_.log_events)
@@ -52,6 +77,7 @@ void ReplicationService::event(const std::string& msg) const {
 bool ReplicationService::start_primary(std::string* err) {
     ReplicationPrimary::Options o;
     o.port = opts_.repl_port;
+    o.bind = opts_.repl_bind;
     o.send_timeout_ms = opts_.send_timeout_ms;
     auto p = std::make_shared<ReplicationPrimary>(engine_, log_, o);
     p->set_epoch(epoch());
@@ -221,6 +247,7 @@ bool ReplicationService::promote(int64_t new_epoch, std::string* reply_info, std
         return false;
     }
     fenced_ = false;
+    store_epoch(new_epoch);
     lease_expiry_ms_ = 0;  // a new primary has NO lease until the coordinator grants one
     gate_.set_enabled(true);
     role_ = 0;

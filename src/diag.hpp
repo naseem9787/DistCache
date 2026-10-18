@@ -40,6 +40,9 @@ struct Counters {
     Counter flush_sync;     // flusher: fdatasync()
     Counter shard_wait;     // engine: waiting to acquire a shard lock
     Counter shard_hold;     // engine: holding a shard lock for one operation (includes logging)
+    Counter repl_encode;    // ReplicationLog::on_set: build the record payload
+    Counter repl_wait;      // ReplicationLog::append_local: time BLOCKED acquiring the log mutex
+    Counter repl_locked;    // ReplicationLog::append_local: time holding it (push + trim + notify)
     std::atomic<uint64_t> flush_cycles{0};
     std::atomic<uint64_t> flush_bytes{0};
     std::atomic<uint64_t> buf_grow_events{0};   // log buffer had to reallocate while appenders held the mutex

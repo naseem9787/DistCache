@@ -300,3 +300,155 @@ TEST(FailoverE2E, ARestartedCoordinatorRefusesToAdoptAStalePrimaryWhenItRemember
     ASSERT_TRUE(wait_until([&] { return healthy(*router3); }));
     EXPECT_EQ(info_of(*router3).epoch, 0);
 }
+
+// TTLs, deletes and rate-limiter buckets across a failover, then a WAL restart of the old primary
+// (replication + failover + TTL + persistence + the rate limiter, in real processes).
+TEST(FailoverE2E, TtlsDeletesAndRateLimiterStateSurviveAFailoverAndAWalRestartOfTheOldPrimary) {
+    Env env;
+    REQUIRE_SERVER_BINARY(env);
+    NodeProc p, r1, r2;
+    p.dir = (env.root / "p-data").string();
+    fs::create_directories(p.dir);
+    p.log = (env.root / "p.log").string();
+    r1.log = (env.root / "r1.log").string();
+    r2.log = (env.root / "r2.log").string();
+    p.start(env.exe, 0, 1);
+    r1.start(env.exe, p.repl_port, 1);
+    r2.start(env.exe, p.repl_port, 1);
+    auto router = make_router(p, {&r1, &r2}, 1);
+    ASSERT_TRUE(wait_until([&] { return healthy(*router); })) << router->coordinator()->status_text();
+    Client c(router->port());
+    ASSERT_TRUE(wait_until([&] { return c.cmd({"SET", "probe", "1"}) == "+OK"; }));   // sync 1: both replicas attached
+    ASSERT_EQ(c.cmd({"SET", "short", "s", "PX", "1500"}), "+OK");
+    ASSERT_EQ(c.cmd({"SET", "long", "l", "EX", "3600"}), "+OK");
+    ASSERT_EQ(c.cmd({"SET", "gone", "g"}), "+OK");
+    ASSERT_EQ(c.cmd({"DEL", "gone"}), ":1");
+    for (int i = 0; i < 3; ++i) {
+        auto r = c.cmd_ints({"RL.ACQUIRE", "bucket", "5", "0.001"});
+        ASSERT_EQ(r.size(), 4u);
+        ASSERT_EQ(r[0], 1);
+    }
+    ASSERT_TRUE(wait_until([&] {
+        auto a = p.role(), b = r1.role(), d = r2.role();
+        return a.size() > 3 && b.size() > 3 && d.size() > 3 && a[3] == b[3] && a[3] == d[3];
+    }));
+
+    p.proc.signal(SIGKILL);
+    p.proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).failovers == 1 && healthy(*router); })) << router->coordinator()->status_text();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1700));   // "short" (1500 ms) is now past its deadline
+
+    Client c2(router->port());
+    EXPECT_EQ(c2.cmd({"GET", "short"}), "(nil)") << "an expired key came back after the failover";
+    EXPECT_EQ(c2.cmd({"GET", "gone"}), "(nil)");
+    EXPECT_EQ(c2.cmd({"GET", "long"}), "l");
+    const long long ttl = std::stoll(c2.cmd({"TTL", "long"}).substr(1));
+    EXPECT_GT(ttl, 3500);
+    EXPECT_LE(ttl, 3600);
+    int allowed = 0;   // capacity 5, three already taken before the crash: exactly two more
+    for (int i = 0; i < 4; ++i) {
+        std::vector<long long> r;
+        for (int tries = 0; tries < 50 && r.empty(); ++tries) {   // -NOREPLICAS until the other replica re-attaches
+            r = c2.cmd_ints({"RL.ACQUIRE", "bucket", "5", "0.001"});
+            if (r.empty()) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        ASSERT_EQ(r.size(), 4u);
+        allowed += static_cast<int>(r[0]);
+    }
+    EXPECT_EQ(allowed, 2) << "the failover forgot or invented rate-limit tokens";
+
+    p.start(env.exe, 0, 1);   // the old primary restarts from its WAL, which still has short, gone (live) and the old bucket
+    ASSERT_TRUE(wait_until([&] { return p.synced_replica() && p.epoch() == 1; })) << router->coordinator()->status_text();
+    EXPECT_EQ(p.get("short"), "(nil)");
+    EXPECT_EQ(p.get("gone"), "(nil)");
+    EXPECT_EQ(p.get("long"), "l");
+    Client direct(p.port);
+    auto peek = direct.cmd_ints({"RL.PEEK", "bucket", "5", "0.001"});
+    ASSERT_EQ(peek.size(), 4u);
+    EXPECT_EQ(peek[0], 0) << "the demoted node must show the new primary's bucket (empty), not its stale WAL copy";
+    EXPECT_EQ(peek[1], 0);
+}
+
+// Found by bench/harness/chaos.py: the promoted primary crashes while the shard cannot elect a successor
+// (sync 1 with two replicas needs both of them). When it restarts it must be recognised as the latest
+// primary of its epoch (the epoch is stored next to its WAL), otherwise the shard is wedged forever even
+// though every node is back.
+TEST(FailoverE2E, ACrashedPrimaryThatRestartsIsReadoptedAtItsOwnEpochInsteadOfWedgingTheShard) {
+    Env env;
+    REQUIRE_SERVER_BINARY(env);
+    NodeProc p, r1, r2;
+    for (auto* n : {&p, &r1, &r2}) {
+        n->dir = (env.root / ("data-" + std::to_string(n->port))).string();
+        fs::create_directories(n->dir);
+    }
+    p.log = (env.root / "p.log").string();
+    r1.log = (env.root / "r1.log").string();
+    r2.log = (env.root / "r2.log").string();
+    p.start(env.exe, 0, 1);
+    r1.start(env.exe, p.repl_port, 1);
+    r2.start(env.exe, p.repl_port, 1);
+    auto router = make_router(p, {&r1, &r2}, 1);
+    ASSERT_TRUE(wait_until([&] { return healthy(*router); })) << router->coordinator()->status_text();
+    Client c(router->port());
+    ASSERT_TRUE(wait_until([&] { return r1.synced_replica() && r2.synced_replica(); })) << "both replicas must be in sync before the primary is killed";
+    ASSERT_TRUE(wait_until([&] { return c.cmd({"SET", "probe", "1"}) == "+OK"; }));
+    for (int i = 0; i < 200; ++i) ASSERT_EQ(c.cmd({"SET", "k" + std::to_string(i), "v" + std::to_string(i)}), "+OK");
+
+    // 1. first failover: p dies, r1 becomes the primary (epoch 1); p comes back as a replica
+    p.proc.signal(SIGKILL);
+    p.proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).failovers == 1 && healthy(*router); })) << router->coordinator()->status_text();
+    p.start(env.exe, 0, 1);
+    ASSERT_TRUE(wait_until([&] { return p.synced_replica() && r2.synced_replica(); })) << router->coordinator()->status_text();
+    Client c1(router->port());
+    ASSERT_TRUE(wait_until([&] { return c1.cmd({"SET", "after-first", "1"}) == "+OK"; }));
+
+    // 2. a replica is lost and then the primary too: with R=2, N=1 nobody may be promoted
+    r2.proc.signal(SIGKILL);
+    r2.proc.stop();
+    r1.proc.signal(SIGKILL);
+    r1.proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).state == "unavailable"; })) << router->coordinator()->status_text();
+    EXPECT_NE(info_of(*router).reason.find("NOT PROMOTING"), std::string::npos) << info_of(*router).reason;
+
+    // 3. the primary restarts from its WAL (as a plain node): it reports the epoch it was promoted at
+    r1.start(env.exe, 0, 1);
+    EXPECT_EQ(r1.epoch(), 1) << "the restarted primary lost its epoch";
+    ASSERT_TRUE(wait_until([&] { return healthy(*router); }, 15000)) << "wedged: " << router->coordinator()->status_text();
+    EXPECT_EQ(info_of(*router).epoch, 1);
+    EXPECT_EQ(info_of(*router).failovers, 1u) << "re-adoption must not be a second failover";
+    Client c2(router->port());
+    for (int i = 0; i < 200; ++i) ASSERT_EQ(c2.cmd({"GET", "k" + std::to_string(i)}), "v" + std::to_string(i)) << i;
+    EXPECT_EQ(c2.cmd({"GET", "after-first"}), "1");
+    EXPECT_TRUE(wait_until([&] { return c2.cmd({"SET", "after-restart", "1"}) == "+OK"; }));   // p (still a replica) acknowledges
+    r2.start(env.exe, 0, 1);
+    ASSERT_TRUE(wait_until([&] { return r2.synced_replica() && p.synced_replica(); })) << router->coordinator()->status_text();
+}
+
+// The same restart must NOT be adopted when a newer epoch already exists.
+TEST(FailoverE2E, ARestartedFormerPrimaryAtAnOlderEpochIsStillDemotedNotAdopted) {
+    Env env;
+    REQUIRE_SERVER_BINARY(env);
+    NodeProc p, r1;
+    p.dir = (env.root / "data-p").string();
+    r1.dir = (env.root / "data-r1").string();
+    fs::create_directories(p.dir);
+    fs::create_directories(r1.dir);
+    p.log = (env.root / "p.log").string();
+    r1.log = (env.root / "r1.log").string();
+    p.start(env.exe, 0);
+    r1.start(env.exe, p.repl_port);
+    auto router = make_router(p, {&r1}, 0);
+    ASSERT_TRUE(wait_until([&] { return healthy(*router); }));
+    Client c(router->port());
+    ASSERT_EQ(c.cmd({"SET", "k", "v1"}), "+OK");
+    ASSERT_TRUE(wait_until([&] { auto a = p.role(), b = r1.role(); return a.size() > 3 && b.size() > 3 && a[3] == b[3]; }));
+    p.proc.signal(SIGKILL);
+    p.proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).failovers == 1 && healthy(*router); }));   // r1 primary at epoch 1
+    ASSERT_EQ(c.cmd({"SET", "k", "v2"}), "+OK");
+    p.start(env.exe, 0);   // epoch 0: older than the shard's epoch 1
+    ASSERT_TRUE(wait_until([&] { return p.synced_replica() && p.epoch() == 1; })) << router->coordinator()->status_text();
+    EXPECT_EQ(p.get("k"), "v2");
+    EXPECT_EQ(info_of(*router).primary, "a#1");
+}

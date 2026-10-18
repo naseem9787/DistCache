@@ -51,6 +51,7 @@ class ReplicationPrimary {
 public:
     struct Options {
         int port = 0;                       // 0 = ephemeral (see port())
+        std::string bind = "0.0.0.0";       // IPv4 address to listen on
         size_t batch_bytes = 256u << 10;    // max payload bytes per network batch
         int send_timeout_ms = 5000;         // a replica that does not drain its socket this long is cut
         int ping_ms = 100;                  // heartbeat interval when idle

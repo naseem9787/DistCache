@@ -22,6 +22,7 @@ struct ServerOptions {
     int port = 6380;      // 0 = let the OS pick (see Server::port())
     int workers = 4;      // number of worker (epoll) threads
     CommandHooks* hooks = nullptr;  // persistence (SAVE / INFO / durable-before-reply); may be null
+    std::string bind = "0.0.0.0";   // IPv4 address to listen on (the distcache binary defaults to 127.0.0.1)
 };
 
 class Server {

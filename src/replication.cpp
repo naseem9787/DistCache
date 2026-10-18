@@ -1,3 +1,4 @@
+#include "net_util.hpp"
 #include "replication.hpp"
 
 #include <arpa/inet.h>
@@ -95,7 +96,7 @@ bool ReplicationPrimary::start(std::string* error) {
     setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     sockaddr_in a{};
     a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (!parse_bind_address(opts_.bind, &a.sin_addr.s_addr)) return fail("bad bind address '" + opts_.bind + "'");
     a.sin_port = htons(static_cast<uint16_t>(opts_.port));
     if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0) return fail(std::string("bind: ") + std::strerror(errno));
     if (::listen(listen_fd_, 64) != 0) return fail(std::string("listen: ") + std::strerror(errno));

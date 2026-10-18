@@ -65,6 +65,7 @@ private:
 };
 
 struct NodeReplicationOptions {
+    std::string repl_bind = "0.0.0.0";  // address the replication port listens on
     int repl_port = -1;               // >= 0: serve replicas on this port (0 = ephemeral). A replica keeps it for its promotion.
     std::string replicaof_host;       // non-empty: start as a replica of this primary's replication port
     int replicaof_port = 0;
@@ -83,6 +84,13 @@ struct NodeReplicationOptions {
     bool require_lease = false;       // true under a router: no lease, no writes (fail closed)
     double lease_eps = 0.05;          // the node trusts a lease for L*(1-eps)
     int64_t initial_epoch = 0;
+    // If set, the epoch at which this node was last PROMOTED is stored here (atomically, fsynced) and
+    // read back at startup. A primary that crashes and restarts then still reports the epoch it held, so
+    // the coordinator recognises it as the shard's latest primary instead of a stale node; without this a
+    // shard whose sole up-to-date primary restarts while a replica is still resynchronising can never be
+    // re-adopted (found by bench/harness/chaos.py). Replicas do not store theirs: after a full power cycle
+    // only the last primary claims the highest epoch.
+    std::string epoch_file;
     bool log_events = true;           // role transitions on stderr
 };
 
@@ -129,6 +137,7 @@ private:
     bool start_primary(std::string* err);
     void start_replica(const std::string& host, int port);
     void event(const std::string& msg) const;
+    void store_epoch(int64_t e) const;
 
     Engine& engine_;
     NodeReplicationOptions opts_;

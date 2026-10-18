@@ -55,6 +55,7 @@ struct RouterNode {
 
 struct RouterOptions {
     int port = 6390;                                  // 0 = let the OS pick (see Router::port())
+    std::string bind = "0.0.0.0";                     // IPv4 address to listen on (the binary defaults to 127.0.0.1)
     uint32_t vnodes = HashRing::kDefaultVnodes;       // ring points per unit of weight
     int io_timeout_ms = 3000;                         // connect / send / recv timeout towards nodes
     CoordinatorOptions failover;                      // lease / probe / failure-detection parameters
@@ -83,6 +84,14 @@ public:
     // are active. `report` is filled when migrate is true.
     bool add_node(const RouterNode& node, bool migrate, MigrationReport* report, std::string* error);
     bool remove_node(const std::string& name, bool migrate, MigrationReport* report, std::string* error);
+
+    // A migration that finished with errors (a node was unreachable, e.g. during a failover) is left
+    // PENDING: the router keeps the migrating route, so reads still find keys on their old owner,
+    // and refuses further topology changes until resume_migration() completes without errors (or
+    // abort_migration() accepts the loss: the unmoved keys become unreachable orphans).
+    bool migration_pending() const { return migration_pending_.load(); }
+    bool resume_migration(MigrationReport* report, std::string* error);
+    bool abort_migration(std::string* error);
 
     std::string info() const;                       // the text served by RING INFO / INFO
     Coordinator* coordinator() { return coordinator_.get(); }  // null if no shard has replicas
@@ -114,6 +123,9 @@ private:
 
     std::shared_ptr<const Route> route_;   // accessed with std::atomic_load / atomic_store
     std::mutex admin_mu_;                  // one topology change at a time
+    std::atomic<bool> migration_pending_{false};
+    std::vector<std::string> pending_sources_;   // guarded by admin_mu_
+    std::string pending_leaving_;                // node being removed, kept until the migration completes
     std::mutex publish_mu_;                // serialises update_route
     std::unique_ptr<Coordinator> coordinator_;
     // Number of client batches currently running on the unlocked fast path. A migration

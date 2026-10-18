@@ -40,6 +40,9 @@ std::string report() {
     out += line("flush_sync", k.flush_sync);
     out += line("shard_wait", k.shard_wait);
     out += line("shard_hold", k.shard_hold);
+    out += line("repl_encode", k.repl_encode);
+    out += line("repl_wait", k.repl_wait);
+    out += line("repl_locked", k.repl_locked);
     out += "diag_flush_cycles:" + std::to_string(k.flush_cycles.load()) + "\r\n";
     out += "diag_flush_bytes:" + std::to_string(k.flush_bytes.load()) + "\r\n";
     out += "diag_buf_grow_events:" + std::to_string(k.buf_grow_events.load()) + "\r\n";
