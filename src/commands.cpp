@@ -7,6 +7,7 @@
 
 #include "diag.hpp"
 #include "glob.hpp"
+#include "rate_limiter.hpp"
 #include "resp.hpp"
 
 namespace {
@@ -20,10 +21,10 @@ std::string upper(std::string s) {
 }
 
 bool is_write_command(const std::string& c) {
-    return c == "SET" || c == "DEL" || c == "EXPIRE" || c == "PEXPIRE" || c == "PERSIST";
+    return c == "SET" || c == "DEL" || c == "EXPIRE" || c == "PEXPIRE" || c == "PERSIST" || c == "RL.ACQUIRE";
 }
 bool is_read_command(const std::string& c) {
-    return c == "GET" || c == "TTL" || c == "PTTL" || c == "DBSIZE" || c == "KEYS";
+    return c == "GET" || c == "TTL" || c == "PTTL" || c == "DBSIZE" || c == "KEYS" || c == "RL.PEEK";
 }
 
 std::string wrong_args(const std::string& cmd) {
@@ -113,6 +114,8 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
         for (size_t i = 1; i < args.size(); ++i) removed += store.del(args[i]) ? 1 : 0;
         return resp_integer(removed);
     }
+    if (cmd == "RL.ACQUIRE") return ratelimit::run(store, args, true);
+    if (cmd == "RL.PEEK") return ratelimit::run(store, args, false);
     if (cmd == "EXPIRE") return cmd_expire(store, args, true);
     if (cmd == "PEXPIRE") return cmd_expire(store, args, false);
     if (cmd == "TTL") return cmd_ttl(store, args, true);
@@ -138,12 +141,15 @@ std::string execute(Engine& store, const std::vector<std::string>& args, Command
         return out;
     }
     if (cmd == "INFO") {
+        const auto rl = ratelimit::counters();
         return resp_bulk(std::string("# Concurrency\r\nmode:") + store.mode() +
                          "\r\nshards:" + std::to_string(store.shards()) +
                          "\r\n# Stats\r\nkeys:" + std::to_string(store.size()) +
                          "\r\nmax_keys:" + std::to_string(store.max_keys()) +
                          "\r\nevicted_keys:" + std::to_string(store.evicted_keys()) +
-                         "\r\nexpired_keys:" + std::to_string(store.expired_keys()) + "\r\n" +
+                         "\r\nexpired_keys:" + std::to_string(store.expired_keys()) +
+                         "\r\nrl_allowed:" + std::to_string(rl.allowed) + "\r\nrl_denied:" + std::to_string(rl.denied) +
+                         "\r\nrl_errors:" + std::to_string(rl.errors) + "\r\n" +
                          (hooks ? hooks->info() : std::string("# Persistence\r\nenabled:no\r\n")) +
 #ifdef DISTCACHE_DIAGNOSTICS
                          diag::report()

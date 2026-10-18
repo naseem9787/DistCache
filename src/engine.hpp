@@ -38,9 +38,24 @@ public:
 // (key, value, remaining ttl in ms or -1 for none)
 using EntryVisitor = std::function<void(const std::string&, const std::string&, int64_t)>;
 
+// What an Engine::update callback wants stored (same meaning as set(key, value, ttl_ms)).
+struct EngineWrite {
+    std::string value;
+    std::optional<int64_t> ttl_ms;
+};
+// Receives the key's live value (nullopt if missing or expired) and returns the write to apply, or
+// nullopt to leave the key alone.
+using UpdateFn = std::function<std::optional<EngineWrite>(const std::optional<std::string>& current)>;
+
 class Engine {
 public:
     virtual ~Engine() = default;
+
+    // Atomic read-modify-write on ONE key: `fn` runs inside the key's critical section, so no other
+    // operation on that key can run between the read and the write. A returned write goes through
+    // exactly the same path as set() (LRU, TTL index, MutationObserver), so it is logged and
+    // replicated like any SET. `fn` must be short and must not call back into the engine.
+    virtual void update(const std::string& key, const UpdateFn& fn) = 0;
 
     virtual void set(const std::string& key, std::string value,
                      std::optional<int64_t> ttl_ms = std::nullopt) = 0;

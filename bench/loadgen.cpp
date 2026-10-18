@@ -79,6 +79,9 @@ struct Options {
     int value_size = 64;
     double get_ratio = 0.8;       // fraction of requests that are GET
     int64_t ttl_ms = 0;           // >0: SET carries PX <ttl_ms>
+    int64_t rl_capacity = 0;      // >0: every request is RL.ACQUIRE <key> <capacity> <rl_rate> [cost] (Phase 9)
+    std::string rl_rate = "10";   // tokens per second, passed through verbatim
+    int64_t rl_cost = 1;
     std::string key_dist = "uniform";
     double zipf_s = 0.99;
     bool preload = false;
@@ -215,6 +218,8 @@ struct Conn {
 struct ThreadResult {
     Histogram lat;
     uint64_t gets = 0, sets = 0, hits = 0, misses = 0, errors = 0, protocol_errors = 0, requests = 0;
+    uint64_t rl_allowed = 0, rl_denied = 0;  // measured window only
+    uint64_t rl_allowed_all = 0;             // every allowed answer, warm-up included (for the admission bound)
     std::vector<uint64_t> per_second;
     std::vector<uint64_t> per_second_miss;  // GET misses per second (hit rate over time)
     uint64_t connect_failures = 0;
@@ -352,9 +357,18 @@ void run_thread(const Options& o, const HashRing* ring, const KeyDist& dist, con
         }
         c.outstanding = static_cast<size_t>(o.pipeline);
         for (int i = 0; i < o.pipeline; ++i) {
-            bool is_get = rng.uniform01() < o.get_ratio;
+            bool is_get = o.rl_capacity > 0 ? false : rng.uniform01() < o.get_ratio;
             std::string key = key_name(dist.pick(rng));
             NodeConn& n = c.nc[target_of(ring, key)];  // the ring picks the node (one target: always 0)
+            if (o.rl_capacity > 0) {
+                n.out += o.rl_cost > 1 ? "*5\r\n$10\r\nRL.ACQUIRE\r\n" : "*4\r\n$10\r\nRL.ACQUIRE\r\n";
+                append_bulk(n.out, key);
+                append_bulk(n.out, std::to_string(o.rl_capacity));
+                append_bulk(n.out, o.rl_rate);
+                if (o.rl_cost > 1) append_bulk(n.out, std::to_string(o.rl_cost));
+                n.kinds.push_back(2);
+                continue;
+            }
             if (is_get) {
                 n.out += "*2\r\n$3\r\nGET\r\n";
                 append_bulk(n.out, key);
@@ -453,7 +467,22 @@ void run_thread(const Options& o, const HashRing* ring, const KeyDist& dist, con
                 if (eol == std::string::npos) break;
                 size_t next;
                 bool nil = false, error = false;
-                if (type == '$') {
+                long rl_flag = -1;  // first integer of an RL.ACQUIRE array reply: 1 allowed, 0 denied
+                if (type == '*') {
+                    // an array of integers (RL.ACQUIRE): consume all elements or wait for more bytes
+                    long cnt = std::strtol(n.in.c_str() + pos + 1, nullptr, 10);
+                    size_t p = eol + 2;
+                    bool complete = true;
+                    for (long e2 = 0; e2 < cnt; ++e2) {
+                        size_t el = n.in.find("\r\n", p);
+                        if (el == std::string::npos) { complete = false; break; }
+                        if (n.in[p] != ':') { res->protocol_errors++; }
+                        else if (e2 == 0) rl_flag = std::strtol(n.in.c_str() + p + 1, nullptr, 10);
+                        p = el + 2;
+                    }
+                    if (!complete) break;
+                    next = p;
+                } else if (type == '$') {
                     long len = std::strtol(n.in.c_str() + pos + 1, nullptr, 10);
                     if (len < 0) { nil = true; next = eol + 2; }
                     else {
@@ -470,9 +499,11 @@ void run_thread(const Options& o, const HashRing* ring, const KeyDist& dist, con
                     next = n.in.size();
                 }
                 pos = next;
-                const bool is_get = n.kinds[n.received] != 0;
+                const bool is_rl = n.kinds[n.received] == 2;
+                const bool is_get = n.kinds[n.received] == 1;
                 n.received++;
                 if (c.outstanding > 0) c.outstanding--;
+                if (is_rl && rl_flag == 1) res->rl_allowed_all++;
                 if (t >= measure_start) {
                     res->lat.record(t - c.batch_start);
                     res->requests++;
@@ -481,7 +512,8 @@ void run_thread(const Options& o, const HashRing* ring, const KeyDist& dist, con
                         res->per_second[sec]++;
                         if (is_get && nil) res->per_second_miss[sec]++;
                     }
-                    if (is_get) { res->gets++; if (nil) res->misses++; else res->hits++; }
+                    if (is_rl) { if (rl_flag == 1) res->rl_allowed++; else if (rl_flag == 0) res->rl_denied++; }
+                    else if (is_get) { res->gets++; if (nil) res->misses++; else res->hits++; }
                     else res->sets++;
                     if (error) res->errors++;
                 }
@@ -522,6 +554,8 @@ void usage() {
         "  --value-size N           bytes per SET value (default 64)\n"
         "  --get-ratio R            fraction of GETs, 0..1 (default 0.8; 0 = SET only, 1 = GET only)\n"
         "  --ttl-ms N               SETs carry PX N (default 0 = no TTL)\n"
+        "  --rl-capacity N          rate-limiter workload: every request is RL.ACQUIRE key N <rate> [cost]\n"
+        "  --rl-rate R --rl-cost C  tokens/s (default 10) and tokens per request (default 1)\n"
         "  --key-dist uniform|zipf  key popularity (default uniform); --zipf-s S (default 0.99)\n"
         "  --preload                SET every key once before the run (not measured)\n"
         "  --seed N --label TEXT");
@@ -550,6 +584,9 @@ int main(int argc, char** argv) {
         else if (a == "--value-size") o.value_size = std::atoi(next());
         else if (a == "--get-ratio") o.get_ratio = std::atof(next());
         else if (a == "--ttl-ms") o.ttl_ms = std::atoll(next());
+        else if (a == "--rl-capacity") o.rl_capacity = std::atoll(next());
+        else if (a == "--rl-rate") o.rl_rate = next();
+        else if (a == "--rl-cost") o.rl_cost = std::max<int64_t>(1, std::atoll(next()));
         else if (a == "--key-dist") o.key_dist = next();
         else if (a == "--zipf-s") o.zipf_s = std::atof(next());
         else if (a == "--preload") o.preload = true;
@@ -642,6 +679,7 @@ int main(int argc, char** argv) {
         total.lat.merge(r.lat);
         total.gets += r.gets; total.sets += r.sets; total.hits += r.hits; total.misses += r.misses;
         total.errors += r.errors; total.protocol_errors += r.protocol_errors; total.requests += r.requests;
+        total.rl_allowed += r.rl_allowed; total.rl_denied += r.rl_denied; total.rl_allowed_all += r.rl_allowed_all;
         total.connect_failures += r.connect_failures;
         for (size_t i = 0; i < r.per_second.size(); ++i) {
             total.per_second[i] += r.per_second[i];
@@ -668,6 +706,12 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(total.misses), static_cast<unsigned long long>(total.errors),
                 static_cast<unsigned long long>(total.protocol_errors),
                 static_cast<unsigned long long>(total.connect_failures), rps);
+    if (o.rl_capacity > 0)
+        std::printf("\"rl\":{\"capacity\":%lld,\"rate\":\"%s\",\"cost\":%lld,\"allowed\":%llu,\"denied\":%llu,"
+                    "\"allowed_all\":%llu,\"total_s\":%.2f},",
+                    static_cast<long long>(o.rl_capacity), json_escape(o.rl_rate).c_str(), static_cast<long long>(o.rl_cost),
+                    static_cast<unsigned long long>(total.rl_allowed), static_cast<unsigned long long>(total.rl_denied),
+                    static_cast<unsigned long long>(total.rl_allowed_all), o.warmup + o.duration);
     std::printf("\"latency_us\":{\"min\":%.1f,\"mean\":%.1f,\"p50\":%.1f,\"p90\":%.1f,\"p95\":%.1f,\"p99\":%.1f,"
                 "\"p999\":%.1f,\"max\":%.1f},",
                 us(total.lat.min()), total.lat.mean() / 1000.0, us(total.lat.quantile(0.50)),

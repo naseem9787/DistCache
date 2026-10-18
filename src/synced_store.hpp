@@ -64,6 +64,10 @@ public:
         std::lock_guard<std::mutex> g(mu_);
         return store_.get(key);
     }
+    void update(const std::string& key, const UpdateFn& fn) override {
+        std::lock_guard<std::mutex> g(mu_);
+        store_.update(key, fn);
+    }
     bool del(const std::string& key) override {
         std::lock_guard<std::mutex> g(mu_);
         return store_.del(key);
@@ -154,6 +158,11 @@ public:
         Shard& s = shard_for(key);
         ShardGuard g(s.mu);
         return s.store.get(key);
+    }
+    void update(const std::string& key, const UpdateFn& fn) override {
+        Shard& s = shard_for(key);
+        ShardGuard g(s.mu);
+        s.store.update(key, fn);
     }
     bool del(const std::string& key) override {
         Shard& s = shard_for(key);

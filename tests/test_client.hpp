@@ -56,6 +56,23 @@ public:
         return out;
     }
 
+    // For commands that answer with an array of integers (RL.ACQUIRE / RL.PEEK). On any other reply
+    // (an error line, a closed connection) returns {} and stores that reply line in *err.
+    std::vector<long long> cmd_ints(const std::vector<std::string>& args, std::string* err = nullptr) {
+        send_raw(encode(args));
+        std::string line;
+        if (!read_line(line)) { if (err) *err = "<closed>"; return {}; }
+        if (line.empty() || line[0] != '*') { if (err) *err = line; return {}; }
+        const long n = std::stol(line.substr(1));
+        std::vector<long long> out;
+        for (long i = 0; i < n; ++i) {
+            std::string v = read_reply();
+            if (v.empty() || v[0] != ':') { if (err) *err = v; return {}; }
+            out.push_back(std::stoll(v.substr(1)));
+        }
+        return out;
+    }
+
     std::string read_reply() {
         std::string line;
         if (!read_line(line) || line.empty()) return "<closed>";

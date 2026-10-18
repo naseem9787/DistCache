@@ -218,6 +218,11 @@ private:
             *key = &c[1];
             return kKey;
         }
+        if (name == "RL.ACQUIRE" || name == "RL.PEEK") {  // rate limiter: one bucket = one key = one shard
+            if (!need(c.size() == 4 || c.size() == 5)) return kLocal;
+            *key = &c[1];
+            return kKey;
+        }
         if (name == "DEL") {
             if (!need(c.size() >= 2)) return kLocal;
             if (c.size() == 2) { *key = &c[1]; return kKey; }
@@ -392,6 +397,14 @@ private:
             if (!parse_integer_reply(a, &x)) return a;
             if (!parse_integer_reply(b, &y)) return b;
             return resp_integer((x + y) > 0 ? 1 : 0);
+        }
+        if (name == "RL.ACQUIRE" || name == "RL.PEEK") {
+            // The bucket's state lives on exactly one node: the new owner once migrated, else the old
+            // one. A bucket that exists nowhere is created on the NEW owner (so it is not orphaned
+            // when the migration ends), which costs one extra PTTL while a migration is running.
+            if (forward(route, *now, Cmd{"PTTL", key}) != ":-2\r\n") return forward(route, *now, c);
+            if (forward(route, *before, Cmd{"PTTL", key}) != ":-2\r\n") return forward(route, *before, c);
+            return forward(route, *now, c);
         }
         // EXPIRE / PEXPIRE / TTL / PTTL / PERSIST: act on whichever node currently holds the key.
         std::string where = forward(route, *now, Cmd{"PTTL", key});

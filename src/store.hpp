@@ -80,6 +80,13 @@ public:
         return it->second.value;
     }
 
+    void update(const std::string& key, const UpdateFn& fn) override {
+        auto it = live(key);
+        std::optional<std::string> current;
+        if (it != map_.end()) current = it->second.value;
+        if (auto w = fn(current)) set(key, std::move(w->value), w->ttl_ms);
+    }
+
     // Returns true if the key existed (and wasn't already expired).
     bool del(const std::string& key) override {
         auto it = live(key);
