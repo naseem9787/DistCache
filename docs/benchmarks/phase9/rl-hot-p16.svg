@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="sans-serif" font-size="11">
+<rect width="760" height="360" fill="#fff"/>
+<text x="380.0" y="22" text-anchor="middle" font-size="14" font-weight="bold">RL.ACQUIRE throughput, hot, pipeline 16</text>
+<line x1="70" y1="290" x2="750" y2="290" stroke="#ddd"/>
+<text x="64" y="294" text-anchor="end">0k</text>
+<line x1="70" y1="228" x2="750" y2="228" stroke="#ddd"/>
+<text x="64" y="232" text-anchor="end">340k</text>
+<line x1="70" y1="165" x2="750" y2="165" stroke="#ddd"/>
+<text x="64" y="169" text-anchor="end">680k</text>
+<line x1="70" y1="102" x2="750" y2="102" stroke="#ddd"/>
+<text x="64" y="106" text-anchor="end">1,020k</text>
+<line x1="70" y1="40" x2="750" y2="40" stroke="#ddd"/>
+<text x="64" y="44" text-anchor="end">1,360k</text>
+<rect x="87" y="98" width="78" height="192" fill="#666"/>
+<text x="126" y="96" text-anchor="middle">1,047k</text>
+<text transform="translate(126,300) rotate(40)" text-anchor="start">single</text>
+<rect x="198" y="73" width="78" height="217" fill="#666"/>
+<text x="238" y="71" text-anchor="middle">1,182k</text>
+<text transform="translate(238,300) rotate(40)" text-anchor="start">single</text>
+<rect x="310" y="105" width="78" height="185" fill="#666"/>
+<text x="349" y="103" text-anchor="middle">1,006k</text>
+<text transform="translate(349,300) rotate(40)" text-anchor="start">cluster-3 smart client</text>
+<rect x="422" y="161" width="78" height="129" fill="#666"/>
+<text x="461" y="159" text-anchor="middle">702k</text>
+<text transform="translate(461,300) rotate(40)" text-anchor="start">cluster-3 router</text>
+<rect x="533" y="106" width="78" height="184" fill="#666"/>
+<text x="573" y="104" text-anchor="middle">1,002k</text>
+<text transform="translate(573,300) rotate(40)" text-anchor="start">async 1 replica</text>
+<rect x="645" y="125" width="78" height="165" fill="#666"/>
+<text x="684" y="123" text-anchor="middle">898k</text>
+<text transform="translate(684,300) rotate(40)" text-anchor="start">sync 1, 1 replica</text>
+<text x="14" y="160" transform="rotate(-90 14 160)">req/s</text></svg>

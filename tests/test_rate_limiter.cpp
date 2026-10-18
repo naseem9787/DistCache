@@ -31,6 +31,7 @@ Params P(int64_t cap, const char* rate_text, int64_t cost = 1) {
 
 // Drives decide() the way the command does: keeps the stored state between calls.
 struct Bucket {
+    explicit Bucket(Params params) : p(params) {}
     Params p;
     std::optional<State> st;
     Decision call(int64_t now, bool consume = true) {
@@ -89,7 +90,7 @@ TEST(TokenBucket, RefillNeverExceedsCapacityHoweverLongTheBucketIdles) {
     for (int64_t idle : {1000LL, 3600LL * 1000, 365LL * 24 * 3600 * 1000}) {
         Bucket c = b;
         int allowed = 0;
-        while (c.call(idle).allowed) ++allowed;
+        while (allowed < 100 && c.call(idle).allowed) ++allowed;
         EXPECT_EQ(allowed, 3) << "idle " << idle;
     }
 }
@@ -146,7 +147,7 @@ TEST(TokenBucket, ChangingTheParametersTakesEffectImmediately) {
     b.p = P(3, "1");                      // capacity lowered: stored tokens are clamped, not kept
     b.st->tokens_ut = 8 * kUnit;
     int allowed = 0;
-    while (b.call(0).allowed) ++allowed;
+    while (allowed < 100 && b.call(0).allowed) ++allowed;
     EXPECT_EQ(allowed, 3);
 }
 
@@ -210,7 +211,7 @@ TEST(TokenBucketClock, AForwardJumpCanFillTheBucketButNotMore) {
     Bucket b{P(4, "1")};
     for (int i = 0; i < 4; ++i) ASSERT_TRUE(b.call(0).allowed);
     int allowed = 0;
-    while (b.call(10LL * 24 * 3600 * 1000).allowed) ++allowed;   // clock leaps ten days
+    while (allowed < 100 && b.call(10LL * 24 * 3600 * 1000).allowed) ++allowed;   // clock leaps ten days
     EXPECT_EQ(allowed, 4);
 }
 
@@ -392,7 +393,9 @@ void hammer_one_key(StoreT& store, FakeWall& wall, int threads, int calls_per_th
     const int64_t elapsed = wall.t.load() - start;
     // capacity 100 + 50 tokens/s * elapsed seconds, computed in integers (milli-tokens)
     EXPECT_LE(allowed.load() * 1000, 100 * 1000 + 50 * elapsed) << "elapsed " << elapsed << " ms";
-    if (!advance_time) EXPECT_EQ(allowed.load(), 100);   // frozen clock: EXACTLY the capacity, no more and no less
+    if (!advance_time) {
+        EXPECT_EQ(allowed.load(), 100);   // frozen clock: EXACTLY the capacity, no more and no less
+    }
 }
 
 TEST(RateLimiterConcurrency, FrozenClockGrantsExactlyTheCapacityToSixteenThreads) {
