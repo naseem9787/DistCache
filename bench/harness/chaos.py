@@ -168,6 +168,8 @@ class Model:
         self.bucket_allowed = {f"chaos:rl:{i}": 0 for i in range(10)}
         self.errors = 0
         self.ops = 0
+        self.uncertain = set()   # keys with an operation of UNKNOWN outcome (a DEL whose reply was lost): no claim either way
+        self.history = {}        # key -> list of "op:outcome" for keys that were ever a DEL victim (evidence for failures)
 
 
 def writer(tid, model, stop, rng):
@@ -197,14 +199,20 @@ def writer(tid, model, stop, rng):
                     model.errors += 1
             if i % 11 == 0 and mine:
                 victim = mine.pop(rng.randrange(len(mine)))
-                r = c.call("DEL", victim)
-                if isinstance(r, int):  # acknowledged: gone for good
-                    with model.lock:
+                try:
+                    r = c.call("DEL", victim)
+                except ConnectionError:
+                    r = None
+                with model.lock:
+                    model.history.setdefault(victim, []).append(f"DEL:{'acked' if isinstance(r, int) else 'UNKNOWN(' + repr(r) + ')'}")
+                    if isinstance(r, int):  # acknowledged: gone for good
                         model.set_acked.pop(victim, None)
                         model.ttl_keys.pop(victim, None)
                         model.del_acked.add(victim)
-                else:
-                    with model.lock:
+                    else:   # the delete may or may not have been applied: the harness may claim nothing about this key
+                        model.set_acked.pop(victim, None)
+                        model.ttl_keys.pop(victim, None)
+                        model.uncertain.add(victim)
                         model.errors += 1
         except ConnectionError:
             with model.lock:
@@ -385,14 +393,22 @@ def main():
         if got is not None:
             resurrected.append(k)
     if missing:
-        problems.append(f"{len(missing)} acknowledged writes are MISSING, e.g. {missing[:3]}")
+        problems.append(f"{len(missing)} acknowledged writes are MISSING, e.g. {missing[:3]}; history of those keys: "
+                        f"{ {k: model.history.get(k, ['SET acked, never a DEL victim']) for k, _, _ in missing[:3]} }")
     if wrong:
         problems.append(f"{len(wrong)} acknowledged writes have a WRONG value, e.g. {wrong[:3]}")
     if resurrected:
         problems.append(f"{len(resurrected)} acknowledged deletes were RESURRECTED, e.g. {resurrected[:3]}")
-    over = {k: n for k, n in model.bucket_allowed.items() if n > 500}
+    # A bucket may be granted its capacity plus what the refill allows for the time that REALLY passed (0.001 tokens/s).
+    # `elapsed` is wall-clock time, so if the host is suspended mid-run (a laptop sleeping, a VM paused) the allowance
+    # grows with it; such a run is flagged, but the bound stays exact.
+    allowance = 500 + 0.001 * elapsed + 1
+    over = {k: n for k, n in model.bucket_allowed.items() if n > allowance}
     if over:
-        problems.append(f"rate-limit buckets granted more than their capacity (500): {over}")
+        problems.append(f"rate-limit buckets granted more than capacity 500 + refill for {elapsed:.0f} s ({allowance:.1f}): {over}")
+    suspended = elapsed > args.seconds * 3 + 60
+    if suspended:
+        log(f"NOTE: this run took {elapsed:.0f} s instead of ~{args.seconds + 10:.0f} s: the host was suspended or stalled; timings are not meaningful")
     ttl = c.call("TTL", "chaos:ttl-probe")
     if not isinstance(ttl, int) or not (0 < ttl <= 7200):
         problems.append(f"TTL probe has TTL {ttl!r}")
@@ -432,11 +448,18 @@ def main():
         topo[shard] = dict(primaries=masters, dbsize=sizes)
     result = dict(seconds=args.seconds, seed=args.seed, elapsed_s=round(elapsed, 1), events=counts,
                   acked_live_keys=len(model.set_acked), acked_deletes=len(model.del_acked), ttl_keys=len(model.ttl_keys),
+                  unknown_outcome_deletes=len(model.uncertain),
                   client_ops_acknowledged=model.ops, client_errors=model.errors,
-                  bucket_allowed=model.bucket_allowed, topology=topo, healed=healed, problems=problems)
+                  bucket_allowed=model.bucket_allowed, topology=topo, healed=healed, host_suspended=elapsed > args.seconds * 3 + 60, problems=problems)
     print(json.dumps(result, indent=2))
     if args.out:
         json.dump(result, open(args.out, "w"), indent=2)
+    if problems and args.out:   # keep the evidence: node and router logs of the failing run
+        import shutil
+        dest = args.out.replace(".json", "") + ".logs"
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.copytree(os.path.join(DC_HOME, "logs"), dest)
+        print(f"logs of the failing run kept in {dest}")
     sh("down")
     if problems:
         print("\nFAILED:\n  " + "\n  ".join(problems))

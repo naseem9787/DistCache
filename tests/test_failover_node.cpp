@@ -96,7 +96,7 @@ TEST(Failover, WithoutALeaseAWriteIsRefusedAndALeaseIsTrustedForLessThanItsLengt
     Client c(n.port());
     const std::string no_lease = "-READONLY No valid write lease (not granted or expired).";
     EXPECT_EQ(c.cmd({"SET", "k", "v"}), no_lease);          // fail closed from the first instant
-    EXPECT_EQ(c.cmd({"GET", "k"}), "(nil)");                // reads are not affected
+    EXPECT_EQ(c.cmd({"GET", "k"}).rfind("-NOLEASE", 0), 0u);   // nor are reads served: nobody vouches for this node's data
     EXPECT_EQ(c.cmd({"LEASE", "0", "1000"}), "+OK");
     EXPECT_EQ(c.cmd({"SET", "k", "v"}), "+OK");
     const long long rem = std::stoll(field(c.cmd_array({"ROLE"}), kLease));
@@ -117,10 +117,11 @@ TEST(Failover, AReplyHeldForReplicasIsNotAcknowledgedIfTheLeaseLapsedMeanwhile) 
     po.sync_replicas = 1;
     po.sync_timeout_ms = 10000;
     Node primary(po);
+    Client admin(primary.port());
+    ASSERT_EQ(admin.cmd({"LEASE", "0", "60000"}), "+OK");   // a primary serves replicas only while the coordinator vouches for it
     Node replica(replica_opts(primary.svc.repl_port()));
     ASSERT_TRUE(wait_until([&] { return synced(replica); }));
     ASSERT_TRUE(wait_until([&] { return primary.svc.primary()->in_sync_replicas(1500) == 1; }));
-    Client admin(primary.port());
 
     // Control case: the lease is renewed before the acks arrive -> the write is acknowledged.
     ASSERT_EQ(admin.cmd({"LEASE", "0", "400"}), "+OK");

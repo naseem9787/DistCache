@@ -1,0 +1,5 @@
+recovered: snapshot=no (0 keys), 0 log segments, 0 records replayed, 0 already-expired skipped, 0 keys live
+replication primary, replication port 8503
+distcache 1.0.0 listening on 127.0.0.1:7503 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=0] DEMOTED, replicating from 127.0.0.1:8501 (full resync)
+[repl role=replica epoch=1] re-pointed to 127.0.0.1:8502

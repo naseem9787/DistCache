@@ -2,7 +2,7 @@
 // They check two kinds of things:
 //   * values: a GET must never return a torn or foreign value
 //   * structure: after the storm, consistent() proves map / LRU list / deadline index agree
-// They are most valuable under ThreadSanitizer (see README), which also flags any
+// They are most valuable under ThreadSanitizer (see docs/phases/phase4.md), which also flags any
 // unsynchronized access that happens to produce the right answer by luck.
 #include <gtest/gtest.h>
 

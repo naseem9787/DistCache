@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
 
     ro.repl_bind = bind_addr;
     if (!dir.empty()) ro.epoch_file = dir + "/primary.epoch";
+    ro.ack_durable = !dir.empty() && fsync_policy == FsyncPolicy::Always;
     std::unique_ptr<Engine> engine;
     if (mode == "single") {
         if (threads != 1) std::fprintf(stderr, "note: single mode is unsynchronized, using 1 worker thread\n");

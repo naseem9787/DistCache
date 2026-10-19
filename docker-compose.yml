@@ -1,0 +1,69 @@
+# The same cluster as scripts/cluster.sh: 2 shards x (1 primary + 2 replicas) + a router.
+#   docker compose up --build -d
+#   redis-cli -p 7000 SHARD STATUS         # the router is published on the host's port 7000
+#   docker compose kill a1                 # kill -9 a primary; watch redis-cli -p 7000 SHARD EVENTS
+#   docker compose up -d a1                # it comes back and rejoins as a replica
+#   docker compose down -v
+#
+# NOT RUN: written on a machine without Docker (see the Dockerfile). Treat it as a starting point; the tested
+# equivalent is scripts/cluster.sh. Nodes find each other by service name (the code resolves host names).
+# No node uses --replicaof: the router assigns roles (see scripts/cluster.sh for why).
+x-node: &node
+  build: .
+  image: distcache
+  restart: "no"
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "6380"]
+    interval: 5s
+    timeout: 3s
+    retries: 6
+    start_period: 10s
+
+services:
+  a1:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["a1:/data"]
+  a2:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["a2:/data"]
+  a3:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["a3:/data"]
+  b1:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["b1:/data"]
+  b2:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["b2:/data"]
+  b3:
+    <<: *node
+    command: ["--bind", "0.0.0.0", "--dir", "/data", "--repl-port", "6381", "--repl-sync", "1", "--repl-require-lease", "--threads", "2"]
+    volumes: ["b3:/data"]
+  router:
+    image: distcache
+    build: .
+    entrypoint: ["distcache_router"]
+    command: ["--bind", "0.0.0.0", "--port", "6390",
+              "--node", "a=a1:6380", "--replica", "a=a2:6380", "--replica", "a=a3:6380",
+              "--node", "b=b1:6380", "--replica", "b=b2:6380", "--replica", "b=b3:6380",
+              "--sync-replicas", "1", "--lease-ms", "1000", "--probe-ms", "250", "--probe-timeout-ms", "300",
+              "--guard-ms", "250", "--state-file", "/state/router.state"]
+    ports: ["7000:6390"]
+    volumes: ["router:/state"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "6390"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      a2: { condition: service_healthy }
+      a3: { condition: service_healthy }
+      b2: { condition: service_healthy }
+      b3: { condition: service_healthy }
+
+volumes: { a1: {}, a2: {}, a3: {}, b1: {}, b2: {}, b3: {}, router: {} }

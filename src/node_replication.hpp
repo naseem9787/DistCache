@@ -91,6 +91,11 @@ struct NodeReplicationOptions {
     // re-adopted (found by bench/harness/chaos.py). Replicas do not store theirs: after a full power cycle
     // only the last primary claims the highest epoch.
     std::string epoch_file;
+    // True when an acknowledged write is already durable on this node's own disk (--dir with --fsync always). Only
+    // then may the coordinator re-adopt this node as primary after it restarted: its WAL holds every write it ever
+    // acknowledged. Otherwise (everysec/no) the tail of its WAL died with the process while the replicas still have
+    // it, so the replicas, not the restarted node, are the source of truth.
+    bool ack_durable = false;
     bool log_events = true;           // role transitions on stderr
 };
 

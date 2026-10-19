@@ -1,0 +1,55 @@
+{
+  "seconds": 90.0,
+  "seed": 5,
+  "elapsed_s": 32526.6,
+  "events": {
+    "kill_primary": 4,
+    "kill_replica": 3,
+    "freeze_primary": 2,
+    "restart_router": 1
+  },
+  "acked_live_keys": 97391,
+  "acked_deletes": 9739,
+  "ttl_keys": 13925,
+  "client_ops_acknowledged": 107130,
+  "client_errors": 9889,
+  "bucket_allowed": {
+    "chaos:rl:0": 532,
+    "chaos:rl:1": 532,
+    "chaos:rl:2": 532,
+    "chaos:rl:3": 532,
+    "chaos:rl:4": 532,
+    "chaos:rl:5": 532,
+    "chaos:rl:6": 532,
+    "chaos:rl:7": 532,
+    "chaos:rl:8": 532,
+    "chaos:rl:9": 532
+  },
+  "topology": {
+    "a": {
+      "primaries": [
+        "a1"
+      ],
+      "dbsize": {
+        "a1": 50932,
+        "a2": 45497,
+        "a3": 50932
+      }
+    },
+    "b": {
+      "primaries": [
+        "b1"
+      ],
+      "dbsize": {
+        "b1": 46470,
+        "b2": 46470,
+        "b3": 46470
+      }
+    }
+  },
+  "healed": true,
+  "problems": [
+    "rate-limit buckets granted more than their capacity (500): {'chaos:rl:0': 532, 'chaos:rl:1': 532, 'chaos:rl:2': 532, 'chaos:rl:3': 532, 'chaos:rl:4': 532, 'chaos:rl:5': 532, 'chaos:rl:6': 532, 'chaos:rl:7': 532, 'chaos:rl:8': 532, 'chaos:rl:9': 532}",
+    "shard a: replicas have diverged: DBSIZE {'a1': 50932, 'a2': 45497, 'a3': 50932}"
+  ]
+}

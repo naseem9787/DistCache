@@ -228,6 +228,27 @@ Request: the replica connects to the primary's replication port and sends
 * **No safe replica**: as implemented, the shard is marked unavailable and the router refuses
   BOTH reads and writes for its keys (fail closed: with an ambiguous state even a read could be
   stale). Nothing is promoted on a guess.
+* **A promoted primary remembers its epoch** *(Phase 10)*: the epoch it was promoted at is stored next to its
+  WAL (`primary.epoch`, atomic rename + fsync). Without it a primary that crashes while no successor can be
+  elected (sync 1, two replicas needs both) restarts at epoch 0, looks stale to the coordinator, and the
+  shard is wedged although every node is back (found by `bench/harness/chaos.py`). Replicas do not store
+  theirs, so after a full power cycle only the last primary claims the highest epoch. A restarted *older*
+  primary is still demoted. Power-loss caveat: if the primary loses the tail of its WAL (`--fsync everysec`
+  and a power cut) and is re-adopted, replicas that were ahead resynchronise from it and discard that
+  tail; use `--fsync always` where that matters.
+* **A restarted primary is NOT re-adopted unless it fsyncs before acknowledging** *(Phase 10, found by the chaos
+  harness; a Phase 8 defect)*. If the primary process is killed and restarted before the router has promoted
+  anyone, it comes back at the same epoch with a new replication log (a new `replid`). With `--fsync everysec`
+  (or `no`) the tail of its WAL died with the process, but under `--repl-sync N` the replicas hold those
+  acknowledged writes; re-adopting the node made the replicas resynchronise *down* to it and **lose acknowledged
+  writes** (92 of 1,800 in a deterministic test). Three rules now prevent it: (1) the coordinator treats a primary
+  whose lineage changed as failed and promotes the best replica, unless the node reports (ROLE field 11) that it
+  acknowledges only fsynced writes (`--dir` with `--fsync always`), in which case its WAL holds every write it ever
+  acknowledged and it is re-adopted; (2) a node under `--repl-require-lease` serves `SYNC` only while it holds a
+  valid lease, so a restarted node cannot rewind its replicas in the window before the coordinator looks;
+  (3) such a node refuses reads too (`-NOLEASE`), because its dataset may be shorter than its replicas'.
+  Consequence: when the primary restarted without fsync-always and not enough replicas are eligible, the shard stays
+  closed (unavailable) until replicas return; there is no operator override. That is the price of not guessing.
 * **Highest epoch is durable** (`--state-file`): a restarted router refuses to adopt a member
   whose epoch is older than the highest it ever saw, so it cannot re-crown a stale primary when
   the newer ones are unreachable. Without the file it learns epochs from the nodes and waits out
@@ -239,8 +260,11 @@ Request: the replica connects to the primary's replication port and sends
 * **Routing**: the ring identifies a shard by NAME; only the shard's primary address changes, so no
   key moves. The router sends writes to the current primary only.
 * **Migration (Phase 7) during failover**: migration steps address the shard's current primary.
-  If it fails mid-step the step is counted in `errors=` and the key stays where it was; failover
-  proceeds independently; the migrating route keeps working through the new primary.
+  If a step fails it is counted in `errors=` and the key stays where it was; failover proceeds
+  independently. *(Phase 10)* A migration that ends with errors stays **pending**: the router keeps the
+  migrating route (so reads still fall back to the old owner and nothing is orphaned), refuses other
+  topology changes, and `RING RESUME` retries the leftovers once the shard is back (`RING ABORT` gives up).
+  Test: `Integration.AFailoverInTheMiddleOfALiveMigration...`.
 
 ## 6. What is NOT guaranteed (so nobody has to discover it)
 

@@ -15,12 +15,12 @@
 // a pipelined batch the router sends to all nodes first and then reads the replies in command
 // order, so a batch that touches several nodes costs about one round trip, not one per command.
 // Thread-per-connection does not scale to thousands of clients; a real proxy would use an
-// event loop (documented in the README).
+// event loop (documented in docs/phases/phase7.md).
 //
 // Topology changes (RING ADD / RING REMOVE) re-build the ring and publish it atomically. With
 // MIGRATE the router also moves the affected keys, see migrate_keys() for the protocol and the
 // guarantee it gives. Without MIGRATE the keys that changed owner simply become unreachable
-// (misses) on the new owner: acceptable for a cache, and measured in the README.
+// (misses) on the new owner: acceptable for a cache, and measured in docs/phases/phase7.md.
 //
 // Single-router assumption: the migration protocol's atomicity comes from locks inside THIS
 // process. Several routers sharing one set of nodes can serve traffic with a static ring, but

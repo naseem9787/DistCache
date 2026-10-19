@@ -234,6 +234,13 @@ void ReplicationPrimary::serve(std::shared_ptr<Link> link) {
         send_fd(link->fd, "-ERR expected SYNC <replid> <next_offset> <epoch> <replica_id>\r\n");
         return finish();
     }
+    if (serve_gate_ && !serve_gate_()) {
+        // A node nobody vouches for (no valid lease: freshly restarted, fenced, or replaced) must not become the
+        // source of a resynchronisation: its dataset may be SHORTER than its replicas' (its WAL tail died with the
+        // process) and a full resync would make the replicas discard acknowledged writes.
+        send_fd(link->fd, "-ERR NOTVOUCHED this node holds no valid lease, so it may not serve replicas\r\n");
+        return finish();
+    }
     const std::string their_id = req.array[1].str;
     const uint64_t next = std::strtoull(req.array[2].str.c_str(), nullptr, 10);
     link->rid = req.array[4].str;

@@ -1,0 +1,118 @@
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:17566
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] several masters at epoch 0; keeping the designated primary a#0
+[coordinator] +1ms [a] primary is a#0 (epoch 0)
+[coordinator] +77ms [a] demoting a#1 to follow a#0
+[coordinator] +177ms [a] demoting a#2 to follow a#0
+[coordinator] +177ms [b] several masters at epoch 0; keeping the designated primary b#0
+[coordinator] +178ms [b] primary is b#0 (epoch 0)
+[coordinator] +277ms [b] demoting b#1 to follow b#0
+[coordinator] +377ms [b] demoting b#2 to follow b#0
+[coordinator] +1597ms [b] PRIMARY FAILED: primary b#0 unreachable (3/3)
+[coordinator] +1927ms [b] PROMOTED b#1 to epoch 1 at offset 47 (2 eligible)
+[coordinator] +1927ms [b] recovered after 330 ms
+[coordinator] +1927ms [b] re-pointing b#2 to follow b#1
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:17685
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] primary is a#0 (epoch 0)
+[coordinator] +2ms [b] primary is b#1 (epoch 1)
+[coordinator] +5024ms [a] PRIMARY FAILED: primary a#0 unreachable (3/3)
+[coordinator] +5789ms [a] PROMOTED a#2 to epoch 1 at offset 9433 (2 eligible)
+[coordinator] +5789ms [a] recovered after 765 ms
+[coordinator] +5790ms [a] re-pointing a#1 to follow a#2
+[coordinator] +10847ms [a] demoting a#0 to follow a#2
+[coordinator] +11560ms [a] PRIMARY FAILED: primary a#2 unreachable (3/3)
+[coordinator] +12330ms [a] PROMOTED a#0 to epoch 2 at offset 14138 (2 eligible)
+[coordinator] +12330ms [a] recovered after 770 ms
+[coordinator] +12332ms [a] re-pointing a#1 to follow a#0
+[coordinator] +14152ms [a] demoting a#2 to follow a#0
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:17851
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] primary is a#0 (epoch 2)
+[coordinator] +1ms [b] primary is b#1 (epoch 1)
+[coordinator] +4268ms [a] PRIMARY FAILED: primary a#0 unreachable (3/3)
+[coordinator] +5041ms [a] PROMOTED a#1 to epoch 3 at offset 21752 (2 eligible)
+[coordinator] +5041ms [a] recovered after 773 ms
+[coordinator] +5042ms [a] re-pointing a#2 to follow a#1
+[coordinator] +6826ms [a] demoting a#0 to follow a#1
+[coordinator] +23902ms [a] demoting a#2 to follow a#1
+[coordinator] +29087ms [a] PRIMARY FAILED: primary a#1 unreachable (3/3)
+[coordinator] +29420ms [a] PROMOTED a#0 to epoch 4 at offset 42885 (2 eligible)
+[coordinator] +29420ms [a] recovered after 333 ms
+[coordinator] +29420ms [a] re-pointing a#2 to follow a#0
+[coordinator] +32565ms [a] demoting a#1 to follow a#0
+[coordinator] +40680ms [a] demoting a#1 to follow a#0
+[coordinator] +45603ms [b] PRIMARY FAILED: primary b#1 unreachable (3/3)
+[coordinator] +46877ms [b] PROMOTED b#0 to epoch 2 at offset 53607 (2 eligible)
+[coordinator] +46877ms [b] recovered after 1274 ms
+[coordinator] +46877ms [b] re-pointing b#2 to follow b#0
+[coordinator] +49194ms [b] demoting b#1 to follow b#0
+[coordinator] +54623ms [a] PRIMARY FAILED: primary a#0 unreachable (3/3)
+[coordinator] +54956ms [a] PROMOTED a#1 to epoch 5 at offset 63863 (2 eligible)
+[coordinator] +54957ms [a] recovered after 334 ms
+[coordinator] +54957ms [a] re-pointing a#2 to follow a#1
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:18235
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] primary is a#1 (epoch 5)
+[coordinator] +1ms [b] primary is b#0 (epoch 2)
+[coordinator] +8054ms [b] demoting b#1 to follow b#0

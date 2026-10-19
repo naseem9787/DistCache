@@ -1,5 +1,5 @@
 #pragma once
-// Two thread-safe wrappers around Store. See README "Phase 4" for the full discussion.
+// Two thread-safe wrappers around Store. See docs/phases/phase4.md for the full discussion.
 //
 // WHY A PLAIN MUTEX AND NOT shared_mutex (reader/writer lock)?
 //   get() is not a read: it moves the key to the front of the LRU list and may delete an

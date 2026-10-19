@@ -4,7 +4,7 @@
 #
 # For each server configuration it runs SET and GET with random keys from a 100k keyspace,
 # 64-byte values, at several client counts, with and without pipelining. Every run is
-# kept in the CSV. Client and server share this machine and compete for CPU: see README.
+# kept in the CSV. Client and server share this machine and compete for CPU: see docs/phases/phase4.md.
 #
 # Request counts are chosen so every run lasts several seconds. redis-benchmark reports
 # time in coarse steps, so runs under ~2 s give quantized, untrustworthy throughput.

@@ -34,6 +34,7 @@ struct Coordinator::Impl {
         bool fenced = false;
         bool synced = false;
         int repl_port = -1;
+        bool ack_durable = false;   // ROLE field 11: its acknowledged writes are fsynced
     };
     enum class State { Starting, Healthy, FailingOver, Unavailable };
     struct Shard {
@@ -137,6 +138,7 @@ struct Coordinator::Impl {
         m.fenced = r.array[4].str == "1";
         m.synced = m.role == "master" || r.array[6].str == "synced";
         m.repl_port = static_cast<int>(std::strtol(r.array[7].str.c_str(), nullptr, 10));
+        m.ack_durable = r.array.size() > 10 && r.array[10].str == "1";
     }
 
     // -- one round for one shard ----------------------------------------------------------------------
@@ -156,6 +158,21 @@ struct Coordinator::Impl {
                 s.failures = opts.fail_after;
                 s.reason = "primary " + p.spec.name + " no longer holds the primary role of epoch " + std::to_string(s.epoch) +
                            " (reports " + p.role + " epoch " + std::to_string(p.epoch) + (p.fenced ? ", fenced" : "") + ")";
+            } else if (!s.replid.empty() && p.replid != s.replid) {
+                // Same epoch, but a different lineage: the primary PROCESS was restarted (a new process starts a new
+                // replication log). Its in-memory WAL tail is gone, yet its replicas may hold those writes (sync N
+                // acknowledged them). Re-adopting it would make the replicas resynchronise DOWN to it and lose
+                // acknowledged writes. Only a node whose acknowledged writes were already fsynced may be re-adopted.
+                if (p.ack_durable) {
+                    event(s, "primary " + p.spec.name + " restarted; re-adopted because it acknowledges only fsynced writes (--fsync always)");
+                    s.replid = p.replid;
+                    s.primary_repl_port = p.repl_port;
+                    grant_lease(s, p);
+                } else {
+                    s.failures = opts.fail_after;
+                    s.reason = "primary " + p.spec.name + " restarted (new lineage) and does not fsync before acknowledging: "
+                               "its replicas, not its WAL, hold the acknowledged writes";
+                }
             } else {
                 s.primary_repl_port = p.repl_port;
                 grant_lease(s, p);

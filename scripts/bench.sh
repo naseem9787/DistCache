@@ -31,7 +31,7 @@ mkdir -p results
 BINARIES="--binary final=build/distcache --binary baseline=build/distcache_phase5"
 
 echo "== machine health"
-scripts/health_probe.sh || echo "WARNING: the machine is not in a representative state; see docs/benchmarks/phase6 in the README"
+scripts/health_probe.sh || echo "WARNING: the machine is not in a representative state; see docs/phases/phase6.md"
 
 echo "== environment"
 python3 - <<'PY'

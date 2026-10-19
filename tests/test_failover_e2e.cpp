@@ -103,6 +103,7 @@ private:
 struct NodeProc {
     int port = free_port(), repl_port = free_port();
     std::string dir;  // empty = no persistence
+    std::string fsync_policy = "always";
     Proc proc;
     std::string log;
 
@@ -111,7 +112,7 @@ struct NodeProc {
                                       "--repl-require-lease"};
         if (primary_repl_port > 0) { a.push_back("--replicaof"); a.push_back("127.0.0.1:" + std::to_string(primary_repl_port)); }
         if (sync_n > 0) { a.push_back("--repl-sync"); a.push_back(std::to_string(sync_n)); a.push_back("--repl-sync-timeout-ms"); a.push_back("1500"); }
-        if (!dir.empty()) { a.push_back("--dir"); a.push_back(dir); a.push_back("--fsync"); a.push_back("always"); }
+        if (!dir.empty()) { a.push_back("--dir"); a.push_back(dir); a.push_back("--fsync"); a.push_back(fsync_policy); }
         proc.start(a, log);
         ASSERT_TRUE(wait_until([&] { Client c(port); return c.ok() && c.cmd({"PING"}) == "+PONG"; }, 8000)) << "node did not start";
     }
@@ -451,4 +452,97 @@ TEST(FailoverE2E, ARestartedFormerPrimaryAtAnOlderEpochIsStillDemotedNotAdopted)
     ASSERT_TRUE(wait_until([&] { return p.synced_replica() && p.epoch() == 1; })) << router->coordinator()->status_text();
     EXPECT_EQ(p.get("k"), "v2");
     EXPECT_EQ(info_of(*router).primary, "a#1");
+}
+
+// Suspected hole in the epoch-persistence fix: the primary is killed and comes back BEFORE the coordinator has
+// promoted anyone, so it is re-adopted at its own epoch with whatever its WAL holds. With --fsync everysec the WAL
+// tail is still in the process when it dies, but the replicas have it (sync 1). If the restarted primary is
+// re-adopted, the replicas resynchronise DOWN to it and acknowledged writes are lost.
+TEST(FailoverE2E, AnAcknowledgedWriteSurvivesAPrimaryThatIsKilledAndRestartedBeforeAnyPromotion) {
+    Env env;
+    REQUIRE_SERVER_BINARY(env);
+    int lost_total = 0, acked_total = 0;
+    for (int round = 0; round < 6; ++round) {
+        NodeProc p, r1, r2;
+        for (auto* n : {&p, &r1, &r2}) {
+            n->dir = (env.root / ("r" + std::to_string(round) + "-" + std::to_string(n->port))).string();
+            n->fsync_policy = "everysec";
+            fs::create_directories(n->dir);
+        }
+        p.log = (env.root / "p.log").string();
+        r1.log = (env.root / "r1.log").string();
+        r2.log = (env.root / "r2.log").string();
+        p.start(env.exe, 0, 1);
+        r1.start(env.exe, p.repl_port, 1);
+        r2.start(env.exe, p.repl_port, 1);
+        auto router = make_router(p, {&r1, &r2}, 1);
+        ASSERT_TRUE(wait_until([&] { return healthy(*router) && r1.synced_replica() && r2.synced_replica(); }));
+        Client c(router->port());
+        std::vector<std::string> acked;
+        for (int i = 0; i < 300; ++i) {
+            const std::string k = "r" + std::to_string(round) + "k" + std::to_string(i);
+            if (c.cmd({"SET", k, "v"}) == "+OK") acked.push_back(k);
+        }
+        p.proc.signal(SIGKILL);   // immediately after the last acknowledgement
+        p.proc.stop();
+        p.start(env.exe, 0, 1);   // and back before the coordinator can have promoted anybody (lease 500 ms)
+        // The coordinator must notice that the primary PROCESS was replaced (new lineage, no fsync before acks) and
+        // promote a replica, which still holds the tail; the restarted node is demoted and resynchronises.
+        ASSERT_TRUE(wait_until([&] { return info_of(*router).failovers >= 1 && healthy(*router); }, 25000)) << router->coordinator()->status_text();
+        wait_until([&] { return p.synced_replica() && (r1.synced_replica() || r1.role_name() == "master") && (r2.synced_replica() || r2.role_name() == "master"); }, 10000);
+        Client c2(router->port());
+        int lost = 0;
+        for (auto& k : acked) {
+            std::string v;
+            for (int t = 0; t < 50; ++t) { v = c2.cmd({"GET", k}); if (v.rfind("-", 0) != 0) break; std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
+            if (v != "v") ++lost;
+        }
+        lost_total += lost;
+        acked_total += static_cast<int>(acked.size());
+        std::fprintf(stderr, "round %d: %zu acknowledged, %d lost, failovers=%llu epoch=%lld\n", round, acked.size(), lost,
+                     static_cast<unsigned long long>(info_of(*router).failovers), static_cast<long long>(info_of(*router).epoch));
+    }
+    EXPECT_EQ(lost_total, 0) << lost_total << " of " << acked_total << " acknowledged writes lost";
+}
+
+// The documented consequence of the fix above: a restarted primary that does NOT fsync before acknowledging is never
+// re-adopted. When no successor can be elected either, the shard stays closed (it will not risk acknowledged writes).
+TEST(FailoverE2E, ARestartedPrimaryThatDoesNotFsyncBeforeAcknowledgingIsNotReadoptedAndTheShardStaysClosed) {
+    Env env;
+    REQUIRE_SERVER_BINARY(env);
+    NodeProc p, r1, r2;
+    for (auto* n : {&p, &r1, &r2}) {
+        n->dir = (env.root / ("data-" + std::to_string(n->port))).string();
+        n->fsync_policy = "everysec";
+        fs::create_directories(n->dir);
+    }
+    p.log = (env.root / "p.log").string();
+    r1.log = (env.root / "r1.log").string();
+    r2.log = (env.root / "r2.log").string();
+    p.start(env.exe, 0, 1);
+    r1.start(env.exe, p.repl_port, 1);
+    r2.start(env.exe, p.repl_port, 1);
+    auto router = make_router(p, {&r1, &r2}, 1);
+    ASSERT_TRUE(wait_until([&] { return healthy(*router) && r1.synced_replica() && r2.synced_replica(); }));
+    Client c(router->port());
+    for (int i = 0; i < 100; ++i) ASSERT_EQ(c.cmd({"SET", "k" + std::to_string(i), "v"}), "+OK");
+    p.proc.signal(SIGKILL);
+    p.proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).failovers == 1 && healthy(*router); }));   // r1 or r2 promoted (epoch 1)
+    p.start(env.exe, 0, 1);   // the old primary returns and is demoted
+    // now the promoted primary dies together with the other replica: nobody can be elected
+    NodeProc* promoted = r1.role_name() == "master" ? &r1 : &r2;
+    NodeProc* other = promoted == &r1 ? &r2 : &r1;
+    ASSERT_TRUE(wait_until([&] { return other->synced_replica() && p.synced_replica(); }));
+    other->proc.signal(SIGKILL);
+    other->proc.stop();
+    promoted->proc.signal(SIGKILL);
+    promoted->proc.stop();
+    ASSERT_TRUE(wait_until([&] { return info_of(*router).state == "unavailable"; }));
+    promoted->start(env.exe, 0, 1);   // back, but it acknowledged writes it had not fsynced
+    std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+    EXPECT_NE(info_of(*router).state, "healthy") << "a non-durable restarted primary must not be re-adopted";
+    Client direct(promoted->port);
+    EXPECT_EQ(direct.cmd({"SET", "x", "1"}).rfind("-READONLY", 0), 0u);    // and it was never given a lease
+    EXPECT_EQ(direct.cmd({"GET", "k5"}).rfind("-NOLEASE", 0), 0u);        // nor does it serve reads
 }

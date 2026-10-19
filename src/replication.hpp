@@ -75,6 +75,8 @@ public:
     // primary exists, so this one is stale. The connection is refused and the callback lets the
     // node fence itself. Set before start().
     void set_stale_callback(std::function<void(int64_t)> cb) { stale_cb_ = std::move(cb); }
+    // If set and it returns false, a replica's SYNC is refused (-ERR NOTVOUCHED): see ReplicationService.
+    void set_serve_gate(std::function<bool()> gate) { serve_gate_ = std::move(gate); }
 
     // The replicas that currently count for synchronous replication: distinct replica ids (a
     // replica that reconnected may still have an old link open; it counts once, with its best
@@ -120,6 +122,7 @@ private:
     std::atomic<uint64_t> kill_generation_{0};
     std::function<void()> ack_cb_;
     std::function<void(int64_t)> stale_cb_;
+    std::function<bool()> serve_gate_;
     ReplFaults faults_;
     std::thread acceptor_;
 

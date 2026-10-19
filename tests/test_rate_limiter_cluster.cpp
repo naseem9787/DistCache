@@ -239,7 +239,7 @@ TEST(RateLimiterCluster, AnAllowedAnswerIsNotAnnouncedUntilTheReplicaHasItUnderS
     EXPECT_TRUE(acquire(slow, "s", "5", "0.001", &err).empty());
     EXPECT_EQ(err, "<closed>") << "the allowed decision must be held back, then the connection closed on timeout";
     // The token WAS consumed on the primary even though the caller was never told: a timeout burns a
-    // token (over-restrictive, the safe direction). Documented in the README.
+    // token (over-restrictive, the safe direction). Documented in docs/design/rate-limiter.md.
     r.svc.replica()->set_apply_paused(false);
     Client c2(p.port());
     auto v = peek(c2, "s", "5", "0.001");

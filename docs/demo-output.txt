@@ -1,0 +1,145 @@
+
+== 1. Start the cluster: 2 shards (a, b), each 1 primary + 2 replicas, sync replication, WAL, one router
+cluster is up: redis-cli -p 7000   (logs and data in /tmp/distcache-demo)
+$ scripts/cluster.sh status
+shard:a state=healthy primary=a#0 epoch=0 failovers=0 failures=0 lease_wait_ms=1233
+  member:a#0 127.0.0.1:7101 role=master epoch=0 offset=0 synced=yes
+  member:a#1 127.0.0.1:7102 role=master epoch=0 offset=0 synced=yes
+  member:a#2 127.0.0.1:7103 role=master epoch=0 offset=0 synced=yes
+shard:b state=healthy primary=b#0 epoch=0 failovers=0 failures=0 lease_wait_ms=1297
+  member:b#0 127.0.0.1:7201 role=master epoch=0 offset=0 synced=yes
+  member:b#1 127.0.0.1:7202 role=master epoch=0 offset=0 synced=yes
+  member:b#2 127.0.0.1:7203 role=master epoch=0 offset=0 synced=yes
+
+a1 :7101  role,epoch,offset= master 0 0 
+a2 :7102  role,epoch,offset= slave 0 0 
+a3 :7103  role,epoch,offset= slave 0 0 
+b1 :7201  role,epoch,offset= master 0 0 
+b2 :7202  role,epoch,offset= slave 0 0 
+b3 :7203  role,epoch,offset= slave 0 0 
+
+== 2. ROUTING: keys are spread over the shards by consistent hashing
+each shard's primary holds its own share (the router's DBSIZE sums both):
+  shard a primary: 148
+  shard b primary: 152
+  router DBSIZE:   300
+$ redis-cli -p 7000 RING LOOKUP user:42
+b
+
+== 3. REPLICATION: every write is on a replica before the client hears OK (--repl-sync 1)
+replica a2 serves reads but refuses writes:
+$ redis-cli -p 7000 SET k2 stored-on-shard-a
+OK
+$ redis-cli -p 7102 GET k2
+stored-on-shard-a
+$ redis-cli -p 7102 SET k2 x
+READONLY You can't write against a read only replica.
+
+the primary's view of its replicas:
+role_transitions:0
+role:master
+repl_offset:149
+in_sync_replicas:2
+replica0:addr=127.0.0.1:55948,state=streaming,sent=149,acked=149,lag_records=0,ack_age_ms=11
+replica1:addr=127.0.0.1:55964,state=streaming,sent=149,acked=149,lag_records=0,ack_age_ms=11
+
+== 4. RATE LIMITING: a token bucket of 5 tokens (no meaningful refill) stored as a key on shard a
+bucket rl:tenant2 lives on shard: a
+RL.ACQUIRE rl:tenant2 5 0.001   ->   [allowed, remaining, retry_after_ms, reset_after_ms]
+call 1: 1 4 -1 1000000 
+call 2: 1 3 -1 1999996 
+call 3: 1 2 -1 2999992 
+call 4: 1 1 -1 3999988 
+call 5: 1 0 -1 4999984 
+call 6: 0 0 999980 4999980 
+call 7: 0 0 999976 4999976 
+the bucket is replicated: RL.PEEK on replica a2 agrees (advisory read, nothing consumed):
+$ redis-cli -p 7102 RL.PEEK rl:tenant2 5 0.001
+0
+0
+999669
+4999669
+$ redis-cli -p 7000 SET session:ttl alive EX 600
+OK
+
+== 5. FAILOVER: kill -9 the primary of shard a while writing
+$ scripts/cluster.sh kill a1
+killed a1
+writes to shard a work again after 1.494506123 s
+$ redis-cli -p 7000 SHARD STATUS
+shard:a state=healthy primary=a#1 epoch=1 failovers=1 failures=0 lease_wait_ms=1299
+  member:a#0 127.0.0.1:7101 role=down epoch=0 offset=154 synced=yes
+  member:a#1 127.0.0.1:7102 role=slave epoch=0 offset=154 synced=yes
+  member:a#2 127.0.0.1:7103 role=slave epoch=0 offset=154 synced=yes
+shard:b state=healthy primary=b#0 epoch=0 failovers=0 failures=0 lease_wait_ms=1300
+  member:b#0 127.0.0.1:7201 role=master epoch=0 offset=153 synced=yes
+  member:b#1 127.0.0.1:7202 role=slave epoch=0 offset=153 synced=yes
+  member:b#2 127.0.0.1:7203 role=slave epoch=0 offset=153 synced=yes
+
+$ redis-cli -p 7000 SHARD EVENTS
++1ms [a] several masters at epoch 0; keeping the designated primary a#0
++1ms [a] primary is a#0 (epoch 0)
++66ms [a] demoting a#1 to follow a#0
++67ms [a] demoting a#2 to follow a#0
++68ms [b] several masters at epoch 0; keeping the designated primary b#0
++68ms [b] primary is b#0 (epoch 0)
++69ms [b] demoting b#1 to follow b#0
++71ms [b] demoting b#2 to follow b#0
++1756ms [a] PRIMARY FAILED: primary a#0 unreachable (3/3)
++2508ms [a] PROMOTED a#1 to epoch 1 at offset 154 (2 eligible)
++2508ms [a] recovered after 752 ms
++2509ms [a] re-pointing a#2 to follow a#1
+
+nothing acknowledged was lost, TTLs and the rate limiter's state survived:
+$ redis-cli -p 7000 GET user:42
+value-42
+$ redis-cli -p 7000 TTL session:ttl
+598
+the bucket was empty before the crash and still is (a forgotten token would show as 'allowed'):
+$ redis-cli -p 7000 RL.ACQUIRE rl:tenant2 5 0.001
+0
+0
+998135
+4998135
+
+== 6. REJOIN: the old primary comes back; it must not accept writes and must resynchronise
+$ scripts/cluster.sh start a1
+started a1
+a1 is now a replica of the new primary and refuses writes:
+$ redis-cli -p 7101 SET stale write
+READONLY You can't write against a read only replica.
+
+$ redis-cli -p 7101 GET k2
+written-after-the-crash
+$ scripts/cluster.sh status
+shard:a state=healthy primary=a#1 epoch=1 failovers=1 failures=0 lease_wait_ms=1300
+  member:a#0 127.0.0.1:7101 role=slave epoch=1 offset=155 synced=yes
+  member:a#1 127.0.0.1:7102 role=master epoch=1 offset=155 synced=yes
+  member:a#2 127.0.0.1:7103 role=slave epoch=1 offset=155 synced=yes
+shard:b state=healthy primary=b#0 epoch=0 failovers=0 failures=0 lease_wait_ms=1300
+  member:b#0 127.0.0.1:7201 role=master epoch=0 offset=153 synced=yes
+  member:b#1 127.0.0.1:7202 role=slave epoch=0 offset=153 synced=yes
+  member:b#2 127.0.0.1:7203 role=slave epoch=0 offset=153 synced=yes
+
+a1 :7101  role,epoch,offset= slave 1 155 
+a2 :7102  role,epoch,offset= master 1 155 
+a3 :7103  role,epoch,offset= slave 1 155 
+b1 :7201  role,epoch,offset= master 0 153 
+b2 :7202  role,epoch,offset= slave 0 153 
+b3 :7203  role,epoch,offset= slave 0 153 
+
+== 7. LIVE REBALANCING (Phase 7): add a third shard with MIGRATE while data is live
+$ redis-cli -p 7000 RING ADD c 127.0.0.1 7900 MIGRATE
+OK scanned=303 moved=97 superseded=0 vanished=0 errors=0
+keys now on the new shard c: 97
+all 300 users still readable: 300
+the rate-limit bucket is still empty (state moved with the key if it moved):
+$ redis-cli -p 7000 RL.ACQUIRE rl:tenant2 5 0.001
+0
+0
+993550
+4993550
+$ redis-cli -p 7000 RING REMOVE c MIGRATE
+OK scanned=97 moved=97 superseded=0 vanished=0 errors=0
+
+== Done. Shutting the cluster down cleanly.

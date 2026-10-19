@@ -82,6 +82,7 @@ bool ReplicationService::start_primary(std::string* err) {
     auto p = std::make_shared<ReplicationPrimary>(engine_, log_, o);
     p->set_epoch(epoch());
     p->set_ack_callback([this] { notify_ack_listeners(); });
+    if (opts_.require_lease) p->set_serve_gate([this] { return lease_remaining_ms() > 0 && !fenced(); });
     p->set_stale_callback([this](int64_t newer) {
         if (newer > epoch() && role() == Role::Primary) {  // (a report racing with a demotion is moot)
             fenced_ = true;  // a replica has seen a newer epoch: another node was promoted. Stop writing.
@@ -168,6 +169,11 @@ bool ReplicationService::read_allowed(std::string* error) const {
             *error = "LOADING the replica is synchronizing with its primary";
             return false;
         }
+    } else if (opts_.require_lease && (fenced() || steady_ms() >= lease_expiry_ms_.load(std::memory_order_acquire))) {
+        // A primary nobody vouches for (restarted, fenced, or its lease lapsed) may hold a SHORTER dataset than its
+        // replicas, or a stale one: do not serve reads from it either.
+        *error = "NOLEASE This node holds no valid lease, so its data is not vouched for.";
+        return false;
     }
     return true;
 }
@@ -308,6 +314,7 @@ std::string ReplicationService::control(const std::vector<std::string>& args, bo
             std::to_string(p ? p->port() : -1),
             std::to_string(primary_role ? 0 : s.lag()),
             std::to_string(primary_role ? (p ? p->in_sync_replicas(opts_.max_ack_age_ms) : 0) : 0),
+            opts_.ack_durable ? "1" : "0",   // every write this node acknowledges is already fsynced
         };
         std::string out = "*" + std::to_string(v.size()) + "\r\n";
         for (const auto& e : v) out += resp_bulk(e);

@@ -1,0 +1,13 @@
+recovered: snapshot=no (0 keys), 0 log segments, 0 records replayed, 0 already-expired skipped, 0 keys live
+replication primary, replication port 8502
+distcache 1.0.0 listening on 127.0.0.1:7502 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=0] DEMOTED, replicating from 127.0.0.1:8501 (full resync)
+[repl role=primary epoch=1] PROMOTED at offset 47 replid b4342c68fdabd36b2fa971af611d7764089cf778
+recovered: snapshot=no (0 keys), 1 log segments, 53667 records replayed, 0 already-expired skipped, 42932 keys live
+replication primary, replication port 8502
+distcache 1.0.0 listening on 127.0.0.1:7502 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=2] DEMOTED, replicating from 127.0.0.1:8501 (full resync)
+recovered: snapshot=no (0 keys), 2 log segments, 104809 records replayed, 0 already-expired skipped, 49961 keys live
+replication primary, replication port 8502
+distcache 1.0.0 listening on 127.0.0.1:7502 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=2] DEMOTED, replicating from 127.0.0.1:8501 (full resync)

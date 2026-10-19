@@ -1,0 +1,16 @@
+recovered: snapshot=no (0 keys), 0 log segments, 0 records replayed, 0 already-expired skipped, 0 keys live
+replication primary, replication port 8403
+distcache 1.0.0 listening on 127.0.0.1:7403 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=0] DEMOTED, replicating from 127.0.0.1:8401 (full resync)
+[repl role=primary epoch=1] PROMOTED at offset 9433 replid f1109fa922e63e02b8b4a233a29d0be622713f78
+recovered: snapshot=no (0 keys), 1 log segments, 14195 records replayed, 0 already-expired skipped, 8906 keys live
+replication primary, replication port 8403
+distcache 1.0.0 listening on 127.0.0.1:7403 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=2] DEMOTED, replicating from 127.0.0.1:8401 (full resync)
+[repl role=replica epoch=3] re-pointed to 127.0.0.1:8402
+recovered: snapshot=no (0 keys), 2 log segments, 44800 records replayed, 0 already-expired skipped, 27399 keys live
+replication primary, replication port 8403
+distcache 1.0.0 listening on 127.0.0.1:7403 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=3] DEMOTED, replicating from 127.0.0.1:8402 (full resync)
+[repl role=replica epoch=4] re-pointed to 127.0.0.1:8401
+[repl role=replica epoch=5] re-pointed to 127.0.0.1:8402

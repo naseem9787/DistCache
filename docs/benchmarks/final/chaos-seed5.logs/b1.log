@@ -1,0 +1,5 @@
+recovered: snapshot=no (0 keys), 0 log segments, 0 records replayed, 0 already-expired skipped, 0 keys live
+replication primary, replication port 8501
+distcache 1.0.0 listening on 127.0.0.1:7501 (mode=sharded, workers=2, shards=64, max_keys=0)
+[repl role=replica epoch=1] DEMOTED, replicating from 127.0.0.1:8502 (full resync)
+[repl role=primary epoch=2] PROMOTED at offset 53607 replid 8139f7194701f4e07bccfa89db18ef5f954c6fe1

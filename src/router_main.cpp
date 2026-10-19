@@ -3,7 +3,7 @@
 //   distcache_router --port 6390 --node a=127.0.0.1:7001 --node b=127.0.0.1:7002 [--vnodes 160]
 //
 // Clients (redis-cli, the load generator) connect to the router as if it were one node.
-// Topology can be changed at runtime with RING ADD / RING REMOVE (see README).
+// Topology can be changed at runtime with RING ADD / RING REMOVE (see docs/configuration.md).
 #include <algorithm>
 #include <chrono>
 #include <csignal>

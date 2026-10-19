@@ -219,3 +219,26 @@ TEST(Integration, AnAbortedMigrationAcceptsTheLossAndUnblocksTopologyChanges) {
     EXPECT_EQ(c.cmd({"RING", "REMOVE", "dead"}), "+OK");                                // the ring can be repaired now
     EXPECT_EQ(c.cmd({"RING", "ABORT"}).rfind("-ERR no migration is pending", 0), 0u);
 }
+
+// A node nobody vouches for (no valid lease) must neither serve reads nor become the source of a resynchronisation:
+// its dataset may be shorter than its replicas' (the WAL tail of a killed process) or stale.
+TEST(Integration, ALeaselessPrimaryRefusesReadsAndRefusesToServeReplicasUntilTheCoordinatorVouchesForIt) {
+    Node p(opts(0, /*lease=*/true));
+    {
+        Client c(p.port());
+        EXPECT_EQ(c.cmd({"SET", "k", "v"}).rfind("-READONLY", 0), 0u);
+        EXPECT_EQ(c.cmd({"GET", "k"}).rfind("-NOLEASE", 0), 0u) << "a primary without a lease must not serve reads";
+    }
+    auto ro = opts(0, true);
+    ro.replicaof_host = "127.0.0.1";
+    ro.replicaof_port = p.svc.repl_port();
+    Node r(ro);
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    EXPECT_NE(r.svc.replica()->status().state, ReplicationReplica::State::Online) << "it must not serve a resync without a lease";
+    std::string err;
+    ASSERT_TRUE(p.svc.grant_lease(0, 20000, &err)) << err;
+    EXPECT_TRUE(wait_until([&] { return r.svc.replica()->status().state == ReplicationReplica::State::Online; }, 10000));
+    Client c(p.port());
+    EXPECT_EQ(c.cmd({"SET", "k", "v"}), "+OK");
+    EXPECT_EQ(c.cmd({"GET", "k"}), "v");
+}

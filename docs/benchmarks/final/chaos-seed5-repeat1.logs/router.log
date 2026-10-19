@@ -1,0 +1,48 @@
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:8970
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] several masters at epoch 0; keeping the designated primary a#0
+[coordinator] +1ms [a] primary is a#0 (epoch 0)
+[coordinator] +73ms [a] demoting a#1 to follow a#0
+[coordinator] +173ms [a] demoting a#2 to follow a#0
+[coordinator] +174ms [b] several masters at epoch 0; keeping the designated primary b#0
+[coordinator] +174ms [b] primary is b#0 (epoch 0)
+[coordinator] +274ms [b] demoting b#1 to follow b#0
+[coordinator] +374ms [b] demoting b#2 to follow b#0
+[coordinator] +1593ms [b] PRIMARY FAILED: primary b#0 unreachable (3/3)
+[coordinator] +2071ms [b] PROMOTED b#1 to epoch 1 at offset 44 (2 eligible)
+[coordinator] +2072ms [b] recovered after 479 ms
+[coordinator] +2072ms [b] re-pointing b#2 to follow b#1
+distcache_router 1.0.0 listening on 127.0.0.1:7300
+# Server
+distcache_version:1.0.0
+process_id:9094
+uptime_seconds:0
+# Router
+ring_version:1
+migrating:no
+migration_pending:no
+vnodes_per_weight:160
+ring_points:320
+nodes:2
+forwarded_commands:0
+backend_errors:0
+node:a addr=127.0.0.1:7401 weight=1 share=0.5214
+node:b addr=127.0.0.1:7501 weight=1 share=0.4786
+# Shards
+[coordinator] +1ms [a] primary is a#0 (epoch 0)
+[coordinator] +4ms [b] primary is b#1 (epoch 1)

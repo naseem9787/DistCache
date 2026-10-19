@@ -1,0 +1,53 @@
+{
+  "seconds": 90.0,
+  "seed": 2,
+  "elapsed_s": 94.7,
+  "events": {
+    "kill_primary": 3,
+    "kill_replica": 5,
+    "freeze_primary": 2,
+    "restart_router": 3
+  },
+  "acked_live_keys": 125209,
+  "acked_deletes": 12570,
+  "ttl_keys": 17809,
+  "unknown_outcome_deletes": 294,
+  "client_ops_acknowledged": 138073,
+  "client_errors": 6349,
+  "bucket_allowed": {
+    "chaos:rl:0": 500,
+    "chaos:rl:1": 500,
+    "chaos:rl:2": 500,
+    "chaos:rl:3": 500,
+    "chaos:rl:4": 500,
+    "chaos:rl:5": 500,
+    "chaos:rl:6": 500,
+    "chaos:rl:7": 500,
+    "chaos:rl:8": 500,
+    "chaos:rl:9": 500
+  },
+  "topology": {
+    "a": {
+      "primaries": [
+        "a1"
+      ],
+      "dbsize": {
+        "a1": 67179,
+        "a2": 67179,
+        "a3": 67179
+      }
+    },
+    "b": {
+      "primaries": [
+        "b2"
+      ],
+      "dbsize": {
+        "b1": 58336,
+        "b2": 58336,
+        "b3": 58336
+      }
+    }
+  },
+  "healed": true,
+  "problems": []
+}

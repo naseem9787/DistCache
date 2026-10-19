@@ -138,7 +138,7 @@ struct WalStats {
 // later one survived. A striped variant (one buffer per shard, no shared mutex) was built and
 // measured in Phase 6 and REJECTED: the flusher then writes each stripe as a block, so a torn
 // tail can lose an older write while keeping a newer one, and it showed no consistent
-// end-to-end gain (see README, "Optimization ladder"). Do not reintroduce it without a way to
+// end-to-end gain (see docs/phases/phase6.md, "Optimization ladder"). Do not reintroduce it without a way to
 // keep the total order.
 //
 // Locks: buf_mu_ (a spin lock) guards the in-memory buffer and the record count: it is the
