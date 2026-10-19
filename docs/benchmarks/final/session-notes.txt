@@ -1,0 +1,1 @@
+A first launch of the final session at 15:54 UTC was aborted because scripts/health_probe.sh reported DEGRADED (tmpfs write 755 MB/s, right after the sanitizer builds); after a few minutes it read 4.4-5.0 GB/s and the session was restarted. No data from the aborted launch is used.

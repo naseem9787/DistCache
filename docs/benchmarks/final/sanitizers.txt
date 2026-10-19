@@ -1,18 +1,23 @@
-# Sanitizer runs, final tree of Phase 10 (RelWithDebInfo, -j1 builds on a 3.7 GB VM)
+# Sanitizer runs on the final tree of Phase 10 (RelWithDebInfo, -j1 builds on a 3.7 GB VM)
 # ASan+UBSan: -fsanitize=address,undefined -fno-sanitize-recover=undefined ; TSan: -fsanitize=thread (halt_on_error=0)
+# commit: 39432e0 (+ uncommitted changes at the time, see the commit that adds this file)
 
-== asan, whole suite (the 6 real-process failover tests skip here because the sanitized distcache is not built by this target)
-[==========] 299 tests from 46 test suites ran. (93528 ms total)
-[  PASSED  ] 292 tests.
-[  SKIPPED ] 7 tests, listed below:
-sanitizer reports: 0
+== asan: whole suite, including the real-process failover tests (the node processes are sanitized too)
+[==========] 302 tests from 46 test suites ran. (119721 ms total)
+[  PASSED  ] 301 tests.
+[  SKIPPED ] 1 test, listed below:
+sanitizer reports in the test output: 0
+report files written by node processes: 0
+skipped: [  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded (2 ms)
+skipped: [  SKIPPED ] 1 test, listed below:
+skipped: [  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded
 
-== tsan, whole suite (the 6 real-process failover tests skip here because the sanitized distcache is not built by this target)
-[==========] 299 tests from 46 test suites ran. (102116 ms total)
-[  PASSED  ] 292 tests.
-[  SKIPPED ] 7 tests, listed below:
-sanitizer reports: 0
-
-== real-process tests (FailoverE2E.*) rerun with the SANITIZED distcache binary beside the test binary, report files enabled
-asan+ubsan: 6 passed, 0 skipped, report files: 0
-tsan:       6 passed, 0 skipped, report files: 0
+== tsan: whole suite, including the real-process failover tests (the node processes are sanitized too)
+[==========] 302 tests from 46 test suites ran. (125468 ms total)
+[  PASSED  ] 301 tests.
+[  SKIPPED ] 1 test, listed below:
+sanitizer reports in the test output: 0
+report files written by node processes: 0
+skipped: [  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded (1 ms)
+skipped: [  SKIPPED ] 1 test, listed below:
+skipped: [  SKIPPED ] Engines/Recovery.LoggedEvictionsMakeRecoveryIndependentOfReadHistory/sharded

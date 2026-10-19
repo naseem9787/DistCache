@@ -11,7 +11,7 @@ It is not consensus (no Raft/Paxos), it does not claim zero data loss, and it do
 split-brain prevention beyond what is proven under stated timing assumptions.
 
 ```bash
-cmake -S . -B build -G Ninja && cmake --build build          # needs g++ >= 9, CMake, Ninja, GoogleTest, redis-cli for the demos
+cmake -S . -B build -G Ninja && cmake --build build          # needs a C++17 compiler (developed with g++ 15.2), CMake, Ninja, GoogleTest; redis-cli for the demos
 ./build/distcache --port 6380                                 # one node (listens on 127.0.0.1 only; see --bind)
 redis-cli -p 6380 SET session:1 abc EX 60
 redis-cli -p 6380 RL.ACQUIRE api:user:42 100 10               # token bucket: burst 100, 10 tokens/s -> [allowed, remaining, retry_after_ms, reset_after_ms]
@@ -171,10 +171,10 @@ are separated in each document.
 |---|---|
 | engine, Phase 6 | ~440k req/s unpipelined and ~2.0M at pipeline 16 on 4 workers; sharded locks 3.6x one global mutex; TTL costs 36 % on `SET PX`; WAL costs 29-35 % on pipelined SETs; `fsync always` 8-30x below `everysec` but safe; recovery 1M keys 1.2 s (log) vs 0.64 s (snapshot) - [phase 6](docs/phases/phase6.md), `docs/benchmarks/phase6/` |
 | sharding, Phase 7 | 28.6 % of keys move when a 4th node joins (ideal 25 %, `% N` would move 75 %); smart client scales 1.7x/3.0x with 2/3 nodes unpipelined, **the router does not** (one thread per connection) - [phase 7](docs/phases/phase7.md), `docs/benchmarks/phase7/` |
-| replication, failover (final session) | @@P8_SUMMARY@@ - [phase 8](docs/phases/phase8.md), [`docs/benchmarks/final/replication/`](docs/benchmarks/final/replication/report.md) |
-| rate limiter, Phase 9 | hot bucket accurate to 0.9997-1.0000 of the fluid limit, safety bound held in 60/60 runs; 3-node smart client 3.1x one node on many keys (1.9x at pipeline 16), a single hot key does not scale; allowed calls are writes so replication costs what writes cost; no token exceeded capacity across 5+5 kill -9 failovers (sync) - [phase 9](docs/phases/phase9.md), `docs/benchmarks/phase9/` |
+| replication, failover (final session) | final session on the finished code: the replication log alone costs **52 %** of pipelined writes (1.01M vs 2.12M req/s); async +1 replica **-72 %** (594k) and `sync 1` **-72 %** (587k) at pipeline 16, **-47 % / -71 %** at pipeline 1 (p50 336 us vs 88 us); failover after `kill -9` takes **2.6 s** with the default lease (0.65 s with a 500 ms lease), **0 of 25,542** acknowledged writes missing in 20 kills; full resync ~1.3-1.5M keys/s (1M keys in 0.79 s); a replica that also serves heavy reads while the primary is pipelined is cut off and resynchronised in 5 of 5 runs - [phase 8](docs/phases/phase8.md), [`docs/benchmarks/final/replication/`](docs/benchmarks/final/replication/report.md) |
+| rate limiter, Phase 9 | hot bucket accurate to 0.9997-1.0000 of the fluid limit, safety bound held in 60/60 runs; 3-node smart client 3.1x one node on many keys (1.9x at pipeline 16), a single hot key does not scale; allowed calls are writes so replication costs what writes cost; across 5 `kill -9` failovers per policy the capacity was never exceeded with `sync 1` and by at most 1 token with async - [phase 9](docs/phases/phase9.md), `docs/benchmarks/phase9/` |
 | replication-log cost | one thread appends in 173 ns; 4 threads together reach only ~2.5-2.9M records/s (mutex + shared cache lines) and the log alone halves pipelined write throughput; a lock-free ring is the real fix and was **not** attempted (it re-opens the Phase 8 proofs) - [phase 10](docs/phases/phase10.md), `docs/benchmarks/final/repl-log-profile-*.txt` |
-| chaos | @@CHAOS_SUMMARY@@ |
+| chaos | 11 runs of 90 s (seeds 1-8 and three repeats of seed 5): 129 injected faults (39 primary kills, 49 replica kills, 17 SIGSTOP freezes, 24 router restarts), about **1.26M live acknowledged keys and 126k acknowledged deletes verified**, no loss, no resurrection, no bucket over its allowance, one primary per shard, replicas converged; one run is a suspended host (see `docs/benchmarks/final/chaos-notes.md`) |
 
 ## Design trade-offs
 
@@ -195,7 +195,7 @@ untested partitions other than node-unreachable, Docker files unrun, and benchma
 ## Testing
 
 ```bash
-./build/distcache_tests                                   # the full suite: @@TESTS@@
+./build/distcache_tests                                   # the full suite: 302 tests: 301 pass, 1 skipped by design (a recovery test that needs a particular eviction history),
 ./build/distcache_tests --gtest_filter='RateLimiter*:TokenBucket*'          # one area
 python3 bench/harness/chaos.py --seconds 90 --seed 1      # chaos: real processes, random kills/freezes/router restarts, model-checked
 # sanitizers (a 4 GB machine needs -j1):
@@ -203,9 +203,9 @@ cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_
       -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" && cmake --build build-tsan -j1 --target distcache_tests && ./build-tsan/distcache_tests
 ```
 
-@@SANITIZERS@@ The three real-process failover tests skip themselves when `distcache` is not next to the test binary
+ASan+UBSan and TSan each run the same 302 tests on the final code: 301 pass, 1 skipped by design, **0 sanitizer reports** (`docs/benchmarks/final/sanitizers.txt`). The sanitized `distcache` is built next to the test binary, so the six real-process failover tests run too, with sanitized node processes and report files enabled (none were written). The three real-process failover tests skip themselves when `distcache` is not next to the test binary
 (the sanitizer builds), which is why those runs report skips. Every phase's tests were also validated by deliberate
-breakages of the code in a scratch copy (Phase 8: 17 mutations, Phase 9: 10, Phase 10: 2 more), and the chaos
+breakages of the code in a scratch copy (Phase 8: 17 mutations, Phase 9: 10, Phase 10: the lost-write fix, the epoch store and the migration repair), and the chaos
 harness found and fixed a real wedge ([phase 10](docs/phases/phase10.md)).
 
 ## Repository layout

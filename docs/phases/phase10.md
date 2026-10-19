@@ -45,7 +45,7 @@ Two further changes were *measured and rejected*, which is also a result:
 ## 3. Testing
 
 * New tests this phase: 5 (three real-process failover/WAL/TTL/rate-limit tests, two migration-repair tests).
-  Whole suite: **@@TESTS@@**.
+  Whole suite: **302 tests: 301 pass, 1 skipped by design (a recovery test that needs a particular eviction history), in the Release build**.
 * **Chaos** (`bench/harness/chaos.py`): a real cluster (2 shards x 3 nodes, WAL on, `--repl-sync 1`, one router),
   four writers (SET, SET EX, DEL) and two rate-limit clients through the router, while it injects, at random and one
   failure per shard at a time (a restarted node counts as down until resynchronised): `kill -9` of a primary or a
@@ -54,9 +54,26 @@ Two further changes were *measured and rejected*, which is also a result:
   delete still deleted, no rate-limit bucket over its capacity, a sane TTL, exactly one primary per shard, replicas
   converged. Errors during the chaos are expected and counted; an unacknowledged write makes no promise.
 
-@@CHAOS_TABLE@@
+| run | seconds asked | seconds taken | faults injected | live acknowledged keys verified | acknowledged deletes verified | client errors (expected) | result |
+|---|---:|---:|---:|---:|---:|---:|---|
+| seed 1 | 90 | 92 | 11 | 130,300 | 13,063 | 5,652 | pass |
+| seed 2 | 90 | 95 | 13 | 125,209 | 12,570 | 6,349 | pass |
+| seed 3 | 90 | 93 | 9 | 132,758 | 13,422 | 8,315 | pass |
+| seed 4 | 90 | 94 | 15 | 124,925 | 12,682 | 15,447 | pass |
+| seed 5 | 90 | 93 | 13 | 116,724 | 11,747 | 11,204 | pass |
+| seed 6 | 90 | 94 | 14 | 124,261 | 12,540 | 15,012 | pass |
+| seed 7 | 90 | 96 | 14 | 133,543 | 13,367 | 6,074 | pass |
+| seed 8 | 90 | 93 | 12 | 127,150 | 12,866 | 8,742 | pass |
+| seed 5, repeat 1 | 90 | **4,980** | 2 | 10,503 | 1,049 | 267 | host suspended ~83 min; buckets at 504 = 500 + 0.001 x 4,980 (exact); see notes |
+| seed 5, repeat 2 | 90 | 95 | 13 | 113,455 | 11,377 | 9,606 | pass |
+| seed 5, repeat 3 | 90 | 92 | 13 | 116,466 | 11,717 | 9,333 | pass |
 
-* **Sanitizers**: @@SAN@@
+Failing runs that came *before* the fixes are kept and explained, not deleted: two runs of seed 5 on earlier code (one of 32,527 s because the
+host slept overnight; one with a single key missing that was most likely an unknown-outcome `DEL` the harness mishandled), the runs where seeds 2 and 3
+failed to heal (finding 1, JSON overwritten by their reruns), and the deterministic test that reproduced the lost writes. Details and honest
+uncertainty: [`chaos-notes.md`](../benchmarks/final/chaos-notes.md).
+
+* **Sanitizers**: ASan+UBSan and TSan each run the same 302 tests on the final code: 301 pass, 1 skipped by design, **0 sanitizer reports** (`docs/benchmarks/final/sanitizers.txt`). The sanitized `distcache` is built next to the test binary, so the six real-process failover tests run too, with sanitized node processes and report files enabled (none were written).
 * **Mutation checks**: the epoch persistence and the migration repair were each validated by removing them
   (the tests then fail in the way the chaos run failed); Phase 9's ten and Phase 8's seventeen stand.
 
@@ -91,7 +108,37 @@ was **not** attempted in a release phase.
 
 ## 5. Final benchmarks
 
-@@FINAL_BENCH@@
+The finished code, one session (health probe healthy before and after; a first launch was aborted because the probe reported a degraded
+machine right after the sanitizer builds, see `docs/benchmarks/final/session-notes.txt`). `bench/harness/bench_repl.py --suite all --repeats 5`,
+295 runs, none failed; full tables in [`docs/benchmarks/final/replication/report.md`](../benchmarks/final/replication/report.md), raw data next to it.
+
+| | single node | log only | async +1 replica | async +2 | sync 1, +1 | sync 1, +2 | sync 2, +2 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SET, pipeline 1 (req/s) | 449.1k | 399.0k (-11 %) | 237.7k (-47 %) | 177.2k (-61 %) | 130.3k (-71 %) | 118.8k (-74 %) | 99.9k (-78 %) |
+| SET, pipeline 16 | 2,118k | 1,012k (-52 %) | 594k (-72 %) | 471k (-78 %) | 587k (-72 %) | 465k (-78 %) | 464k (-78 %) |
+| 80 % GET, pipeline 16 | 2,135k | 1,774k (-17 %) | 1,006k (-53 %) | 801k (-62 %) | 991k (-54 %) | 794k (-63 %) | 779k (-64 %) |
+
+* **Latency (SET, pipeline 1, p50 / p99):** single 88 / 287 us; async +1 135 / 1,081 us; `sync 1` +1 336 / 1,016 us. The price of the acknowledgement policy is
+  visible at shallow pipelines (`sync 1` is 45 % below async at pipeline 1) and vanishes at pipeline 16 (587k vs 594k): the replication pipeline, not
+  the ack wait, is the limit.
+* **Replication lag** (async, +1 replica, primary's view, SET): median 228 records at pipeline 1, 3,237 at pipeline 16, 55,539 at pipeline 64. With a
+  second load generator reading from the replica the replica **cannot keep up** (cut off by the backlog budget and resynchronised in 5 of 5 runs at pipeline
+  16 and 64); the "max lag" figures of 13-18M records there are samples taken right after such a cut, not a real queue.
+* **Failover** (`kill -9` of the primary under write traffic, 5 kills per row): writes possible again after **2.61 s** (lease 2 s / probe 500 ms, async), 2.59 s
+  (`sync 1`), **0.67 s** / 0.65 s with lease 500 ms / probe 100 ms; the old primary is a synchronised replica again after 0.17-0.51 s; **0 of 25,542
+  acknowledged writes missing**. The window is the lease wait `L(1+eps)+guard` plus detection - the price of never allowing two primaries.
+* **Resynchronisation:** a full resync moves ~1.3-1.5M keys/s (1M keys in 0.79 s); a dropped link under sustained writes is back ONLINE in 0.05-0.15 s
+  (the 5 "full" counts there come from later backlog overflows, not from the drop).
+* **Recovery:** the WAL/snapshot recovery numbers of Phase 6 (1M keys in 1.2 s from the log, 0.64 s from a snapshot) were not re-measured; nothing in
+  Phase 7-10 touches that path.
+* **Rate limiter regression check** (`ratelimit-regression/`, 3 repeats, single node): allow 137.5k / 462.6k (Phase 9: 132.5k / 475.9k), deny
+  159k / 828k (153k / 839k), hot key 189k / 1,019k (180k / 1,047k) req/s at pipeline 1 / 16: within the run-to-run spread, and all bound checks held.
+* **Compared with the earlier Phase 8 session** the numbers agree within a few percent (single node 2.12M vs 2.33M req/s at pipeline 16, a slower
+  session; log only -52 % vs -52 %; failover 2.6 s vs 2.6 s).
+* **Noisy cells are kept:** async +1 replica 80 % GET (CV 8.7 %, range 803k-1,037k), `sync 1` +1 80 % GET (CV 5.5 %).
+
+What the numbers do not say: this is one machine over loopback, so a real network makes `sync N` cost more; the load generators and the replicas share the chip with the
+primary; the closed-loop clients understate queueing delay.
 
 ## 6. Not done / not verified
 

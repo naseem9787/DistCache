@@ -11,7 +11,7 @@
 //   bench_wal engine <single|global|sharded> <threads> <ops_per_thread> <none|no|everysec> <dir>
 //
 // Fixed operation counts (not durations) keep the in-memory log buffer bounded: with no network,
-// producers can outrun any disk, and this log (by design, see README) has no backpressure.
+// producers can outrun any disk, and this log (by design, see docs/phases/phase6.md) has no backpressure.
 #include <fcntl.h>
 #include <unistd.h>
 
