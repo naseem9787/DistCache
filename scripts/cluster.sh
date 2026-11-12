@@ -83,6 +83,13 @@ case $cmd in
     wait_port "$BASE" || { echo "router did not start; see $DC_HOME/logs/router.log"; exit 1; }
     for _ in $(seq 1 150); do healthy && break; sleep 0.2; done
     healthy || { echo "cluster did not become healthy"; redis-cli -p "$BASE" SHARD STATUS; exit 1; }
+    # "healthy" means every shard has a primary; wait until the router has also assigned the replicas (exactly one
+    # master per shard) and they have synchronised, so `up` returns a cluster that is really ready.
+    for _ in $(seq 1 100); do
+      m=$(redis-cli -p "$BASE" SHARD STATUS | grep 'member:')
+      [ "$(echo "$m" | grep -c 'role=master')" -eq 2 ] && [ "$(echo "$m" | grep -c 'synced=yes')" -eq 6 ] && break
+      sleep 0.2
+    done
     echo "cluster is up: redis-cli -p $BASE   (logs and data in $DC_HOME)"
     ;;
   status)

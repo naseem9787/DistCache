@@ -1,5 +1,9 @@
 # DistCache
 
+[![CI](https://github.com/naseem9787/DistCache/actions/workflows/ci.yml/badge.svg)](https://github.com/naseem9787/DistCache/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg)
+
 A Redis-compatible, distributed in-memory cache and rate limiter written from scratch in C++17: RESP over
 TCP, TTL and LRU, a multi-threaded engine, a write-ahead log with snapshots, consistent-hash sharding behind
 a router, primary/replica replication with automatic lease-fenced failover, and a token-bucket rate limiter
@@ -9,6 +13,9 @@ benchmark behind it, and the cases it **cannot** handle are written down
 
 It is not consensus (no Raft/Paxos), it does not claim zero data loss, and it does not claim production-grade
 split-brain prevention beyond what is proven under stated timing assumptions.
+
+<p align="center"><img src="docs/media/demo.svg" alt="Terminal replay of scripts/demo_full.sh: routing, replication, rate limiting, kill -9 failover, rejoin and live rebalancing" width="880"></p>
+<p align="center"><sub>The real output of <a href="scripts/demo_full.sh"><code>scripts/demo_full.sh</code></a> (full text in <a href="docs/demo-output.txt"><code>docs/demo-output.txt</code></a>): a 2-shard cluster routes keys, rate-limits, survives <code>kill -9</code> of a primary with nothing acknowledged lost, rejoins it as a replica, and rebalances live.</sub></p>
 
 ```bash
 cmake -S . -B build -G Ninja && cmake --build build          # needs a C++17 compiler (developed with g++ 15.2), CMake, Ninja, GoogleTest; redis-cli for the demos
@@ -38,6 +45,10 @@ scripts/demo_full.sh                                          # the whole system
 | 10 | integration, chaos testing, two correctness fixes, resumable migration, hardening, packaging | [phase 10](docs/phases/phase10.md) |
 
 ## Architecture
+
+<p align="center"><img src="docs/media/architecture.svg" alt="DistCache architecture: clients, the router with ring and failover coordinator, shards with a primary and two replicas" width="900"></p>
+
+<details><summary>Text version of the diagram</summary>
 
 ```
                       clients (redis-cli, any RESP client, or a smart client using the same ring)
@@ -72,6 +83,8 @@ scripts/demo_full.sh                                          # the whole system
               | read-only|   | read-only|
               +----------+   +----------+
 ```
+
+</details>
 
 Data flow of one write: `client -> router (ring lookup, check shard available) -> primary worker thread ->
 execute() -> engine update under the key's shard lock -> WAL record + replication record appended in that same

@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Release
+            build_type: Release
+            cxx: g++
+            flags: ""
+          - name: Release (g++-12)
+            build_type: Release
+            cxx: g++-12
+            flags: ""
+          - name: ASan + UBSan
+            build_type: RelWithDebInfo
+            cxx: g++
+            flags: "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+          - name: TSan
+            build_type: RelWithDebInfo
+            cxx: g++
+            flags: "-fsanitize=thread -fno-omit-frame-pointer"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++ g++-12 libgtest-dev redis-tools
+
+      - name: Configure
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_FLAGS="${{ matrix.flags }}"
+          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.flags }}"
+
+      # The real-process failover tests start ./build/distcache, so it is built with the same flags (and sanitizers).
+      - name: Build
+        run: cmake --build build --target distcache distcache_router distcache_tests
+
+      - name: Test
+        env:
+          # node processes started by the end-to-end tests write their sanitizer reports here
+          ASAN_OPTIONS: detect_leaks=1:log_path=${{ github.workspace }}/san-logs/asan
+          UBSAN_OPTIONS: print_stacktrace=1:log_path=${{ github.workspace }}/san-logs/ubsan
+          TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1:log_path=${{ github.workspace }}/san-logs/tsan
+        run: |
+          mkdir -p san-logs
+          set -o pipefail
+          timeout 1500 ./build/distcache_tests 2>&1 | tee test.log
+          if ls san-logs/* >/dev/null 2>&1; then
+            echo "::error::a node process wrote sanitizer reports"; cat san-logs/*; exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo "### ${{ matrix.name }}"; grep -E '^\[==========\] [0-9]+ tests|^\[  PASSED|^\[  SKIPPED \] [0-9]+ test|^\[  FAILED' test.log || true; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.name }}
+          path: |
+            test.log
+            san-logs/
+
+  docker-compose:
+    name: Docker Compose cluster
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image, start 2 shards x 3 nodes + router, kill a primary, check failover
+        run: bash scripts/ci_compose_test.sh
