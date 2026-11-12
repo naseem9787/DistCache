@@ -63,7 +63,11 @@ jobs:
           # node processes started by the end-to-end tests write their sanitizer reports here
           ASAN_OPTIONS: detect_leaks=1:log_path=${{ github.workspace }}/san-logs/asan
           UBSAN_OPTIONS: print_stacktrace=1:log_path=${{ github.workspace }}/san-logs/ubsan
-          TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1:log_path=${{ github.workspace }}/san-logs/tsan
+          # detect_deadlocks=0: this runner's TSan runtime (gcc 13) aborts with "CHECK failed: deadlock_detector n_all_locks_ < 64"
+          # because live migration deliberately holds up to 64 per-key stripe locks at once (taken in ascending order, so it
+          # cannot deadlock). Only the lock-order detector is switched off; data-race detection stays on. A newer runtime
+          # (gcc 15) runs the same tests with the detector enabled and reports nothing (docs/benchmarks/final/sanitizers.txt).
+          TSAN_OPTIONS: halt_on_error=0:detect_deadlocks=0:log_path=${{ github.workspace }}/san-logs/tsan
         run: |
           mkdir -p san-logs
           set -o pipefail

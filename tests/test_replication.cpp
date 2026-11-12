@@ -281,7 +281,12 @@ TEST(Replication, FullSyncWhileTheKeyspaceIsBeingModifiedConverges) {
                 default: p.engine.set(k, "w" + std::to_string(n)); break;
             }
             ++n;
-            if (n % 32 == 0) std::this_thread::yield();
+            // Paced, not unthrottled: this test asserts that ONE snapshot is enough. An unthrottled writer on a fast
+            // machine (found on a 4-core CI runner) produces more than the 64 MiB backlog during the deliberately
+            // slowed snapshot, which makes the primary cut the replica and snapshot it a second time. That is correct
+            // (a full sync that outlasts the backlog budget is retried; see ASlowReplica...) but not what is under
+            // test here. About 80k writes/s still lands thousands of writes inside the snapshot window.
+            if (n % 8 == 0) std::this_thread::sleep_for(std::chrono::microseconds(40));
         }
     });
     ReplicaNode r(p.repl.port());
